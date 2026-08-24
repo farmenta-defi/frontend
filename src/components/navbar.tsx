@@ -21,7 +21,7 @@ export function Navbar() {
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4">
         <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-          <span aria-hidden className="inline-block size-2.5 rounded-full bg-emerald-500" />
+          <span aria-hidden className="inline-block size-2.5 rounded-full bg-[#AFDDFF]" />
           Farmenta
         </Link>
         <nav className="hidden items-center gap-1 text-sm md:flex">
