@@ -1,14 +1,6 @@
 import type { Metadata } from "next";
 
 import { PageHeader } from "@/components/page-header";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 export const metadata: Metadata = { title: "Risk parameters" };
 
@@ -29,39 +21,53 @@ export default function RiskPage() {
   return (
     <div>
       <PageHeader
+        number="05"
+        label="RISK_PARAMS"
         title="Risk parameters"
         description="Initial parameters per isolated market, as specified in the Farmenta architecture (v0.2). Subject to simulation before real TVL. Health factor = position value × liquidation threshold ÷ debt."
         wip={false}
       />
-      <div className="overflow-x-auto rounded-lg border border-border/60">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Parameter</TableHead>
-              <TableHead>Blue-chip · USDG</TableHead>
-              <TableHead>Meme · USDG</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+      <div
+        className="overflow-x-auto border border-white/15 anim-fade-up"
+        style={{ animationDelay: "600ms" }}
+      >
+        <table className="w-full font-manrope text-[13px] leading-[18px]">
+          <thead>
+            <tr className="border-b border-white/15 text-left">
+              <th className="px-[20px] py-[12px] font-normal text-[#AFDDFF]/80">
+                PARAMETER
+              </th>
+              <th className="px-[20px] py-[12px] font-normal text-[#AFDDFF]/80 whitespace-nowrap">
+                [ BLUE_CHIP_USDG ]
+              </th>
+              <th className="px-[20px] py-[12px] font-normal text-[#AFDDFF]/80 whitespace-nowrap">
+                [ MEME_USDG ]
+              </th>
+            </tr>
+          </thead>
+          <tbody>
             {rows.map(([p, bc, meme]) => (
-              <TableRow key={p}>
-                <TableCell className="font-medium">{p}</TableCell>
-                <TableCell className="text-muted-foreground">{bc}</TableCell>
-                <TableCell className="text-muted-foreground">{meme}</TableCell>
-              </TableRow>
+              <tr key={p} className="border-b border-white/[0.07] last:border-b-0">
+                <td className="px-[20px] py-[12px] text-white">{p}</td>
+                <td className="px-[20px] py-[12px] text-white/50">{bc}</td>
+                <td className="px-[20px] py-[12px] text-white/50">{meme}</td>
+              </tr>
             ))}
-          </TableBody>
-        </Table>
+          </tbody>
+        </table>
       </div>
-      <p className="mt-4 text-xs text-muted-foreground">
-        Full specification:{" "}
+      <p
+        className="font-manrope mt-4 text-[11px] leading-[14px] text-white/40 anim-fade-up"
+        style={{ animationDelay: "750ms" }}
+      >
+        FULL SPECIFICATION:{" "}
         <a
-          className="underline underline-offset-4 hover:text-foreground"
+          className="text-[#AFDDFF] hover:underline"
           href="https://github.com/farmenta-defi/docs/blob/main/ARCHITECTURE.md"
           target="_blank"
           rel="noreferrer"
         >
-          farmenta-defi/docs · ARCHITECTURE.md
+          VIEW_ARCHITECTURE_DOC
         </a>
       </p>
     </div>

@@ -1,184 +1,17 @@
-"use client";
-
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { Menu, Wallet, X } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+
+import { GridLines } from "@/components/lumen/grid-lines";
+import { LumenNav } from "@/components/lumen/nav";
 
 /**
  * Full-screen landing hero, adapted from the "LŪMEN // ÍNDEX" motionsites.ai
  * spec to the Farmenta brand and stack:
  * - accent #AFDDFF on pure black, Manrope UI face, Archivo display face
  *   (license-safe stand-in for Graphik LCG)
- * - nav links and the wallet strip are REAL (wagmi/RainbowKit), not decorative
+ * - nav links and the wallet strip are REAL (wagmi/RainbowKit), shared with
+ *   the app pages via components/lumen
  * - background video is an external motionsites asset (see README note)
  */
-
-const NAV_ITEMS = [
-  { number: "01", label: "LEND", href: "/lend", delay: 350 },
-  { number: "02", label: "BORROW", href: "/borrow", delay: 450 },
-  { number: "03", label: "PORTFOLIO", href: "/portfolio", delay: 550 },
-  { number: "04", label: "LIQUIDATIONS", href: "/liquidations", delay: 650 },
-  { number: "05", label: "RISK_PARAMS", href: "/risk", delay: 750 },
-] as const;
-
-const shorten = (a: string) => `${a.slice(0, 4)}...${a.slice(-4)}`;
-
-/* ------------------------------------------------------------------ */
-/* Wallet strip — real wagmi state, styled per the spec               */
-/* ------------------------------------------------------------------ */
-
-function WalletStrip({ variant }: { variant: "desktop" | "mobile" }) {
-  return (
-    <ConnectButton.Custom>
-      {({ account, chain, mounted, openAccountModal, openChainModal, openConnectModal }) => {
-        const connected = mounted && !!account && !!chain;
-        const wrongNetwork = connected && chain?.unsupported;
-        const onClick = !connected
-          ? openConnectModal
-          : wrongNetwork
-            ? openChainModal
-            : openAccountModal;
-
-        const address = connected ? shorten(account.address) : "0x00...0000";
-        const status = connected ? "[ CONNECTED ]" : "[ DISCONNECTED ]";
-        const chip = !connected ? "GUEST_MODE" : wrongNetwork ? "WRONG_NETWORK" : "ROBINHOOD_CHAIN";
-
-        const chipEl = (
-          <span className="font-manrope bg-[#AFDDFF] rounded-[3px] px-[5px] py-[2px] text-black text-[13px] leading-[15.6px] whitespace-nowrap">
-            {chip}
-          </span>
-        );
-
-        if (variant === "mobile") {
-          return (
-            <button
-              type="button"
-              onClick={onClick}
-              aria-hidden={!mounted}
-              className="text-left"
-              style={!mounted ? { opacity: 0, pointerEvents: "none" } : undefined}
-            >
-              <div className="flex items-center gap-[10px] mb-3">
-                <Wallet className="w-[15px] h-[15px] text-white" strokeWidth={1.5} />
-                <span className="font-manrope text-white text-[13px] leading-[15.6px]">
-                  {address}
-                </span>
-                <span
-                  className={`font-manrope text-[13px] leading-[15.6px] ${connected ? "text-[#AFDDFF]" : "text-white/50"}`}
-                >
-                  {status}
-                </span>
-              </div>
-              <div className="flex items-center gap-[8px]">
-                <span className="font-manrope text-white text-[13px] leading-[15.6px]">
-                  STATUS:
-                </span>
-                {chipEl}
-              </div>
-            </button>
-          );
-        }
-
-        return (
-          <button
-            type="button"
-            onClick={onClick}
-            aria-hidden={!mounted}
-            className="hidden lg:flex items-center gap-[12px] ml-auto anim-slide-right cursor-pointer"
-            style={{
-              animationDelay: "600ms",
-              ...(!mounted ? { opacity: 0, pointerEvents: "none" } : {}),
-            }}
-          >
-            <Wallet className="w-[15px] h-[15px] text-white" strokeWidth={1.5} />
-            <span className="font-manrope text-white text-[13px] leading-[15.6px]">{address}</span>
-            <span
-              className={`font-manrope text-[13px] leading-[15.6px] ${connected ? "text-[#AFDDFF]" : "text-white/50"}`}
-            >
-              {status}
-            </span>
-            <span className="font-manrope text-white text-[13px] leading-[15.6px] ml-[20px]">
-              STATUS:
-            </span>
-            {chipEl}
-          </button>
-        );
-      }}
-    </ConnectButton.Custom>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Nav item                                                           */
-/* ------------------------------------------------------------------ */
-
-function NavItem({
-  number,
-  label,
-  href,
-  delay,
-}: {
-  number: string;
-  label: string;
-  href: string;
-  delay: number;
-}) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-[3px] anim-fade-up"
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      <span className="font-manrope text-[#AFDDFF]/80 text-[13px] leading-[15.6px]">
-        {number}.
-      </span>
-      <span className="font-manrope text-white text-[13px] leading-[15.6px] cursor-pointer hover:text-[#AFDDFF] transition-colors">
-        {label}
-      </span>
-    </Link>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Grid lines + plus intersections                                    */
-/* ------------------------------------------------------------------ */
-
-const verticalPositions = ["12.6%", "37.5%", "61.9%", "86.2%"];
-const horizontalPositions = ["32.7%", "71.4%"];
-
-function GridLines() {
-  return (
-    <div className="absolute inset-0 pointer-events-none">
-      {verticalPositions.map((left, i) => (
-        <div
-          key={`v-${left}`}
-          className="absolute top-0 h-full w-px bg-white/[0.04] anim-grid-v"
-          style={{ left, animationDelay: `${600 + i * 100}ms` }}
-        />
-      ))}
-      {horizontalPositions.map((top, i) => (
-        <div
-          key={`h-${top}`}
-          className="absolute left-0 w-full h-px bg-white/[0.04] anim-grid-h"
-          style={{ top, animationDelay: `${800 + i * 150}ms` }}
-        />
-      ))}
-      {horizontalPositions.map((top, hi) =>
-        verticalPositions.map((left, vi) => (
-          <div
-            key={`plus-${top}-${left}`}
-            className="absolute anim-scale-in"
-            style={{ top, left, animationDelay: `${1000 + (hi * 4 + vi) * 80}ms` }}
-          >
-            <div className="absolute w-[10px] h-px bg-white/70 -translate-x-1/2 -translate-y-1/2" />
-            <div className="absolute w-px h-[10px] bg-white/70 -translate-x-1/2 -translate-y-1/2" />
-          </div>
-        )),
-      )}
-    </div>
-  );
-}
 
 /* ------------------------------------------------------------------ */
 /* Central nodes — squares, labels, connectors                        */
@@ -274,8 +107,6 @@ function CentralNodes() {
 /* ------------------------------------------------------------------ */
 
 export function FarmentaHero() {
-  const [menuOpen, setMenuOpen] = useState(false);
-
   return (
     <section className="relative w-full h-dvh overflow-hidden bg-black">
       {/* layer 0 — background video (external motionsites asset) */}
@@ -290,111 +121,7 @@ export function FarmentaHero() {
 
       {/* content layer */}
       <div className="relative z-10 w-full h-full">
-        {/* top nav */}
-        <nav className="absolute top-0 left-0 w-full flex items-center px-5 md:px-[35px] py-5 md:py-[27px]">
-          <div className="flex items-center gap-[40px]">
-            <Link
-              href="/"
-              className="font-graphik text-white text-[18px] md:text-[21px] leading-[21px] whitespace-nowrap anim-fade-up"
-              style={{ animationDelay: "200ms" }}
-            >
-              FARMENTA {"//"} V4
-            </Link>
-            <div className="hidden lg:flex items-center gap-[40px]">
-              {NAV_ITEMS.map((item) => (
-                <NavItem key={item.number} {...item} />
-              ))}
-            </div>
-          </div>
-
-          <WalletStrip variant="desktop" />
-
-          {/* hamburger */}
-          <button
-            type="button"
-            aria-label="Toggle menu"
-            onClick={() => setMenuOpen((v) => !v)}
-            className="lg:hidden ml-auto relative w-[40px] h-[40px] flex items-center justify-center anim-fade-in"
-            style={{ animationDelay: "400ms" }}
-          >
-            <span
-              className={`absolute transition-all duration-300 ease-[cubic-bezier(0.76,0,0.24,1)] ${
-                menuOpen ? "opacity-0 rotate-90 scale-50" : "opacity-100 rotate-0 scale-100"
-              }`}
-            >
-              <Menu className="w-[22px] h-[22px] text-white" strokeWidth={1.5} />
-            </span>
-            <span
-              className={`absolute transition-all duration-300 ease-[cubic-bezier(0.76,0,0.24,1)] ${
-                menuOpen ? "opacity-100 rotate-0 scale-100" : "opacity-0 -rotate-90 scale-50"
-              }`}
-            >
-              <X className="w-[22px] h-[22px] text-white" strokeWidth={1.5} />
-            </span>
-          </button>
-        </nav>
-
-        {/* mobile menu overlay */}
-        <div
-          className={`fixed inset-0 z-50 lg:hidden transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] ${
-            menuOpen ? "visible" : "invisible"
-          }`}
-        >
-          <div
-            className={`absolute inset-0 bg-black/90 backdrop-blur-md transition-opacity duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] ${
-              menuOpen ? "opacity-100" : "opacity-0"
-            }`}
-            onClick={() => setMenuOpen(false)}
-          />
-          <div
-            className={`relative h-full flex flex-col px-5 pt-24 pb-10 transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] ${
-              menuOpen ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"
-            }`}
-          >
-            <button
-              type="button"
-              aria-label="Close menu"
-              onClick={() => setMenuOpen(false)}
-              className="absolute top-5 right-5 w-[40px] h-[40px] flex items-center justify-center"
-            >
-              <X className="w-[22px] h-[22px] text-white" strokeWidth={1.5} />
-            </button>
-
-            <div className="flex flex-col gap-8">
-              {NAV_ITEMS.map((item, i) => (
-                <div
-                  key={item.number}
-                  className={`transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] ${
-                    menuOpen ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-6"
-                  }`}
-                  style={{ transitionDelay: menuOpen ? `${150 + i * 75}ms` : "0ms" }}
-                >
-                  <Link
-                    href={item.href}
-                    onClick={() => setMenuOpen(false)}
-                    className="flex items-center gap-3"
-                  >
-                    <span className="font-manrope text-[#AFDDFF]/80 text-[14px] leading-[1]">
-                      {item.number}.
-                    </span>
-                    <span className="font-manrope text-white text-[28px] leading-[1.2] tracking-tight">
-                      {item.label}
-                    </span>
-                  </Link>
-                </div>
-              ))}
-            </div>
-
-            <div
-              className={`mt-auto pt-10 border-t border-white/10 transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] ${
-                menuOpen ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-              }`}
-              style={{ transitionDelay: menuOpen ? "450ms" : "0ms" }}
-            >
-              <WalletStrip variant="mobile" />
-            </div>
-          </div>
-        </div>
+        <LumenNav variant="overlay" />
 
         {/* H1 */}
         <h1

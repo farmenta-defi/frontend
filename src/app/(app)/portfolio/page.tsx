@@ -2,8 +2,8 @@
 
 import { useAccount, useReadContract } from "wagmi";
 
+import { LumenCard } from "@/components/lumen/card";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent } from "@/components/ui/card";
 import { contracts, positionManagerAbi } from "@/lib/contracts";
 
 export default function PortfolioPage() {
@@ -19,28 +19,32 @@ export default function PortfolioPage() {
   return (
     <div>
       <PageHeader
+        number="03"
+        label="PORTFOLIO"
         title="Portfolio"
         description="Your loans, health factors, uncollected fees, and lending deposits — with actions to repay, claim fees, adjust liquidity, and withdraw."
       />
-      <Card>
-        <CardContent className="pt-6 text-sm text-muted-foreground">
-          {!isConnected ? (
-            <p>Connect a wallet to see your positions.</p>
-          ) : (
-            <p>
-              Connected as <span className="font-mono">{address}</span>
-              {posmBalance !== undefined && (
-                <>
-                  {" — "}holding{" "}
-                  <span className="font-mono">{posmBalance.toString()}</span> Uniswap v4
-                  position NFT{posmBalance === BigInt(1) ? "" : "s"} on Robinhood Chain.
-                </>
-              )}{" "}
-              Loan details appear here once the contracts are live.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <LumenCard title="WALLET" delay={600}>
+        {!isConnected ? (
+          <p>
+            <span className="text-white/70">[ DISCONNECTED ]</span> — connect a wallet to
+            see your positions.
+          </p>
+        ) : (
+          <p>
+            <span className="text-[#AFDDFF]">[ CONNECTED ]</span>{" "}
+            <span className="text-white/70 break-all">{address}</span>
+            {posmBalance !== undefined && (
+              <>
+                {" — "}holding <span className="text-white">{posmBalance.toString()}</span>{" "}
+                Uniswap v4 position NFT{posmBalance === BigInt(1) ? "" : "s"} on Robinhood
+                Chain.
+              </>
+            )}{" "}
+            Loan details appear here once the contracts are live.
+          </p>
+        )}
+      </LumenCard>
     </div>
   );
 }

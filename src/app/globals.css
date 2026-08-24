@@ -152,3 +152,26 @@
 .anim-grid-v      { opacity: 0; transform-origin: top;  animation: gridReveal  1.2s cubic-bezier(0.16,1,0.3,1) forwards; }
 .anim-grid-h     { opacity: 0; transform-origin: left; animation: gridRevealH 1.2s cubic-bezier(0.16,1,0.3,1) forwards; }
 .anim-draw-line   { stroke-dasharray: 100; stroke-dashoffset: 100; animation: drawLine 1s cubic-bezier(0.16,1,0.3,1) forwards; }
+
+/* LŪMEN token override — pure black, ice-blue accent, square corners.  */
+/* Later .dark block wins over the base-nova defaults above.            */
+.dark {
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: rgba(255, 255, 255, 0.02);
+  --card-foreground: #ffffff;
+  --popover: #0a0a0a;
+  --popover-foreground: #ffffff;
+  --primary: #afddff;
+  --primary-foreground: #000000;
+  --secondary: rgba(255, 255, 255, 0.06);
+  --secondary-foreground: #ffffff;
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: rgba(255, 255, 255, 0.5);
+  --accent: rgba(175, 221, 255, 0.12);
+  --accent-foreground: #afddff;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.15);
+  --ring: rgba(175, 221, 255, 0.6);
+  --radius: 0px;
+}
