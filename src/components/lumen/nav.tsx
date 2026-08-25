@@ -8,21 +8,58 @@ import { useState } from "react";
 import { WalletStrip } from "./wallet-strip";
 
 export const NAV_ITEMS = [
-  { number: "01", label: "LEND", href: "/lend", delay: 350 },
-  { number: "02", label: "BORROW", href: "/borrow", delay: 450 },
-  { number: "03", label: "PORTFOLIO", href: "/portfolio", delay: 550 },
-  { number: "04", label: "LIQUIDATIONS", href: "/liquidations", delay: 650 },
-  { number: "05", label: "RISK_PARAMS", href: "/risk", delay: 750 },
+  { label: "MARKET", href: "/market", delay: 350 },
+  { label: "PORTFOLIO", href: "/portfolio", delay: 450 },
+  { label: "LIQUIDATIONS", href: "/liquidations", delay: 550 },
+  { label: "RISK PARAMS", href: "/risk", delay: 650 },
 ] as const;
 
+/**
+ * Landing-only CTA that replaces the wallet strip: the wallet is
+ * connected inside the app, not on the marketing hero.
+ */
+function AppButton({
+  variant,
+  onNavigate,
+}: {
+  variant: "desktop" | "mobile";
+  onNavigate?: () => void;
+}) {
+  if (variant === "mobile") {
+    return (
+      <Link
+        href="/market"
+        onClick={onNavigate}
+        className="inline-flex items-center gap-[10px] bg-[#AFDDFF] px-[20px] py-[12px] hover:bg-[#c8e8ff] transition-colors"
+      >
+        <span className="text-black text-[16px] leading-none">&#10022;</span>
+        <span className="font-manrope text-black text-[13px] leading-[15.6px] uppercase tracking-wide">
+          App
+        </span>
+      </Link>
+    );
+  }
+
+  return (
+    <Link
+      href="/market"
+      className="hidden lg:flex ml-auto items-center gap-[10px] bg-[#AFDDFF] px-[16px] py-[8px] hover:bg-[#c8e8ff] transition-colors anim-slide-right"
+      style={{ animationDelay: "600ms" }}
+    >
+      <span className="text-black text-[13px] leading-none">&#10022;</span>
+      <span className="font-manrope text-black text-[13px] leading-[15.6px] uppercase tracking-wide">
+        App
+      </span>
+    </Link>
+  );
+}
+
 function NavItem({
-  number,
   label,
   href,
   delay,
   active,
 }: {
-  number: string;
   label: string;
   href: string;
   delay: number;
@@ -31,12 +68,9 @@ function NavItem({
   return (
     <Link
       href={href}
-      className="flex items-center gap-[3px] anim-fade-up"
+      className="flex items-center anim-fade-up"
       style={{ animationDelay: `${delay}ms` }}
     >
-      <span className="font-manrope text-[#AFDDFF]/80 text-[13px] leading-[15.6px]">
-        {number}.
-      </span>
       <span
         className={`font-manrope text-[13px] leading-[15.6px] cursor-pointer transition-colors ${
           active ? "text-[#AFDDFF]" : "text-white hover:text-[#AFDDFF]"
@@ -72,16 +106,20 @@ export function LumenNav({ variant }: { variant: "overlay" | "page" }) {
             className="font-graphik text-white text-[18px] md:text-[21px] leading-[21px] whitespace-nowrap anim-fade-up"
             style={{ animationDelay: "200ms" }}
           >
-            FARMENTA {"//"} V4
+            FARMENTA
           </Link>
           <div className="hidden lg:flex items-center gap-[40px]">
             {NAV_ITEMS.map((item) => (
-              <NavItem key={item.number} {...item} active={pathname?.startsWith(item.href)} />
+              <NavItem key={item.href} {...item} active={pathname?.startsWith(item.href)} />
             ))}
           </div>
         </div>
 
-        <WalletStrip variant="desktop" />
+        {variant === "overlay" ? (
+          <AppButton variant="desktop" />
+        ) : (
+          <WalletStrip variant="desktop" />
+        )}
 
         {/* hamburger */}
         <button
@@ -137,7 +175,7 @@ export function LumenNav({ variant }: { variant: "overlay" | "page" }) {
           <div className="flex flex-col gap-8">
             {NAV_ITEMS.map((item, i) => (
               <div
-                key={item.number}
+                key={item.href}
                 className={`transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] ${
                   menuOpen ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-6"
                 }`}
@@ -146,11 +184,8 @@ export function LumenNav({ variant }: { variant: "overlay" | "page" }) {
                 <Link
                   href={item.href}
                   onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-3"
+                  className="flex items-center"
                 >
-                  <span className="font-manrope text-[#AFDDFF]/80 text-[14px] leading-[1]">
-                    {item.number}.
-                  </span>
                   <span
                     className={`font-manrope text-[28px] leading-[1.2] tracking-tight ${
                       pathname?.startsWith(item.href) ? "text-[#AFDDFF]" : "text-white"
@@ -169,7 +204,11 @@ export function LumenNav({ variant }: { variant: "overlay" | "page" }) {
             }`}
             style={{ transitionDelay: menuOpen ? "450ms" : "0ms" }}
           >
-            <WalletStrip variant="mobile" />
+            {variant === "overlay" ? (
+              <AppButton variant="mobile" onNavigate={() => setMenuOpen(false)} />
+            ) : (
+              <WalletStrip variant="mobile" />
+            )}
           </div>
         </div>
       </div>

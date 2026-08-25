@@ -8,8 +8,9 @@ import { LumenNav } from "@/components/lumen/nav";
  * spec to the Farmenta brand and stack:
  * - accent #AFDDFF on pure black, Manrope UI face, Archivo display face
  *   (license-safe stand-in for Graphik LCG)
- * - nav links and the wallet strip are REAL (wagmi/RainbowKit), shared with
- *   the app pages via components/lumen
+ * - nav links are REAL and shared with the app pages via components/lumen;
+ *   the landing shows an APP button (→ /market) instead of the wallet strip —
+ *   wallet connect (wagmi/RainbowKit) lives in the app pages only
  * - background video is an external motionsites asset (see README note)
  */
 
@@ -95,7 +96,7 @@ function CentralNodes() {
           [ LIQUIDATION_ENGINE ]
         </span>
         <p className="font-manrope text-white/50 text-[11px] leading-[14px] mt-[4px] max-w-[180px]">
-          Health-factor liquidations keep lenders whole.
+          Health-factor liquidations keep suppliers whole.
         </p>
       </div>
     </div>
@@ -138,7 +139,7 @@ export function FarmentaHero() {
         <div className="absolute bottom-5 md:bottom-[35px] left-5 md:left-[35px] right-5 md:right-[35px] flex flex-col md:flex-row items-start md:items-end justify-between gap-5 md:gap-0">
           {/* CTA */}
           <Link
-            href="/borrow"
+            href="/market"
             className="bg-[#AFDDFF] px-[16px] md:px-[20px] py-[10px] md:py-[12px] flex items-center gap-[10px] hover:bg-[#c8e8ff] transition-colors anim-fade-up"
             style={{ animationDelay: "900ms" }}
           >

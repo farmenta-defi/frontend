@@ -19,10 +19,8 @@ export default function PortfolioPage() {
   return (
     <div>
       <PageHeader
-        number="03"
-        label="PORTFOLIO"
         title="Portfolio"
-        description="Your loans, health factors, uncollected fees, and lending deposits — with actions to repay, claim fees, adjust liquidity, and withdraw."
+        description="Your loans, health factors, uncollected fees, and supply deposits — with actions to repay, claim fees, adjust liquidity, and withdraw."
       />
       <LumenCard title="WALLET" delay={600}>
         {!isConnected ? (

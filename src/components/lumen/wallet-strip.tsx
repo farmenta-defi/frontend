@@ -5,7 +5,12 @@ import { Wallet } from "lucide-react";
 
 const shorten = (a: string) => `${a.slice(0, 4)}...${a.slice(-4)}`;
 
-/** Real wagmi wallet state rendered in the LŪMEN strip style. */
+/**
+ * Real wagmi wallet state in the LŪMEN strip style:
+ * - disconnected → accent CONNECT chip (opens the connect modal)
+ * - wrong network → accent WRONG_NETWORK chip (opens the chain modal)
+ * - connected → wallet icon + shortened address (opens the account modal)
+ */
 export function WalletStrip({ variant }: { variant: "desktop" | "mobile" }) {
   return (
     <ConnectButton.Custom>
@@ -18,15 +23,19 @@ export function WalletStrip({ variant }: { variant: "desktop" | "mobile" }) {
             ? openChainModal
             : openAccountModal;
 
-        const address = connected ? shorten(account.address) : "0x00...0000";
-        const status = connected ? "[ CONNECTED ]" : "[ DISCONNECTED ]";
-        const chip = !connected ? "GUEST_MODE" : wrongNetwork ? "WRONG_NETWORK" : "ROBINHOOD_CHAIN";
-
-        const chipEl = (
-          <span className="font-manrope bg-[#AFDDFF] rounded-[3px] px-[5px] py-[2px] text-black text-[13px] leading-[15.6px] whitespace-nowrap">
-            {chip}
-          </span>
-        );
+        const content =
+          connected && !wrongNetwork ? (
+            <>
+              <Wallet className="w-[15px] h-[15px] text-white" strokeWidth={1.5} />
+              <span className="font-manrope text-white text-[13px] leading-[15.6px]">
+                {shorten(account.address)}
+              </span>
+            </>
+          ) : (
+            <span className="font-manrope bg-[#AFDDFF] rounded-[3px] px-[10px] py-[4px] text-black text-[13px] leading-[15.6px] whitespace-nowrap transition-colors hover:bg-[#c8e8ff]">
+              {wrongNetwork ? "WRONG_NETWORK" : "CONNECT"}
+            </span>
+          );
 
         if (variant === "mobile") {
           return (
@@ -34,26 +43,10 @@ export function WalletStrip({ variant }: { variant: "desktop" | "mobile" }) {
               type="button"
               onClick={onClick}
               aria-hidden={!mounted}
-              className="text-left"
+              className="flex items-center gap-[10px] text-left"
               style={!mounted ? { opacity: 0, pointerEvents: "none" } : undefined}
             >
-              <div className="flex items-center gap-[10px] mb-3">
-                <Wallet className="w-[15px] h-[15px] text-white" strokeWidth={1.5} />
-                <span className="font-manrope text-white text-[13px] leading-[15.6px]">
-                  {address}
-                </span>
-                <span
-                  className={`font-manrope text-[13px] leading-[15.6px] ${connected ? "text-[#AFDDFF]" : "text-white/50"}`}
-                >
-                  {status}
-                </span>
-              </div>
-              <div className="flex items-center gap-[8px]">
-                <span className="font-manrope text-white text-[13px] leading-[15.6px]">
-                  STATUS:
-                </span>
-                {chipEl}
-              </div>
+              {content}
             </button>
           );
         }
@@ -63,23 +56,13 @@ export function WalletStrip({ variant }: { variant: "desktop" | "mobile" }) {
             type="button"
             onClick={onClick}
             aria-hidden={!mounted}
-            className="hidden lg:flex items-center gap-[12px] ml-auto anim-slide-right cursor-pointer"
+            className="hidden lg:flex items-center gap-[10px] ml-auto anim-slide-right cursor-pointer"
             style={{
               animationDelay: "600ms",
               ...(!mounted ? { opacity: 0, pointerEvents: "none" } : {}),
             }}
           >
-            <Wallet className="w-[15px] h-[15px] text-white" strokeWidth={1.5} />
-            <span className="font-manrope text-white text-[13px] leading-[15.6px]">{address}</span>
-            <span
-              className={`font-manrope text-[13px] leading-[15.6px] ${connected ? "text-[#AFDDFF]" : "text-white/50"}`}
-            >
-              {status}
-            </span>
-            <span className="font-manrope text-white text-[13px] leading-[15.6px] ml-[20px]">
-              STATUS:
-            </span>
-            {chipEl}
+            {content}
           </button>
         );
       }}

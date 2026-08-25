@@ -175,3 +175,12 @@
   --ring: rgba(175, 221, 255, 0.6);
   --radius: 0px;
 }
+
+/* Tailwind v4 resets buttons to cursor:default — restore the pointer on
+   every enabled button and button-like element. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}

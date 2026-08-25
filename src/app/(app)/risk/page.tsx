@@ -21,11 +21,8 @@ export default function RiskPage() {
   return (
     <div>
       <PageHeader
-        number="05"
-        label="RISK_PARAMS"
         title="Risk parameters"
         description="Initial parameters per isolated market, as specified in the Farmenta architecture (v0.2). Subject to simulation before real TVL. Health factor = position value × liquidation threshold ÷ debt."
-        wip={false}
       />
       <div
         className="overflow-x-auto border border-white/15 anim-fade-up"

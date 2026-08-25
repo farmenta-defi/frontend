@@ -6,8 +6,15 @@ const horizontalPositions = ["32.7%", "71.4%"];
  * marks at all 8 intersections, animated in with the hero's wipe/scale
  * choreography. `fixed` pins it to the viewport (app pages); default is
  * absolute within the nearest positioned ancestor (hero section).
+ * `crosses={false}` drops the plus marks (app pages keep hairlines only).
  */
-export function GridLines({ fixed = false }: { fixed?: boolean }) {
+export function GridLines({
+  fixed = false,
+  crosses = true,
+}: {
+  fixed?: boolean;
+  crosses?: boolean;
+}) {
   return (
     <div className={`${fixed ? "fixed" : "absolute"} inset-0 pointer-events-none`}>
       {verticalPositions.map((left, i) => (
@@ -24,8 +31,9 @@ export function GridLines({ fixed = false }: { fixed?: boolean }) {
           style={{ top, animationDelay: `${800 + i * 150}ms` }}
         />
       ))}
-      {horizontalPositions.map((top, hi) =>
-        verticalPositions.map((left, vi) => (
+      {crosses &&
+        horizontalPositions.map((top, hi) =>
+          verticalPositions.map((left, vi) => (
           <div
             key={`plus-${top}-${left}`}
             className="absolute anim-scale-in"
@@ -34,8 +42,8 @@ export function GridLines({ fixed = false }: { fixed?: boolean }) {
             <div className="absolute w-[10px] h-px bg-white/70 -translate-x-1/2 -translate-y-1/2" />
             <div className="absolute w-px h-[10px] bg-white/70 -translate-x-1/2 -translate-y-1/2" />
           </div>
-        )),
-      )}
+          )),
+        )}
     </div>
   );
 }
