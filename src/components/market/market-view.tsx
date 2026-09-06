@@ -1,13 +1,14 @@
 "use client";
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { useAccount } from "wagmi";
 
 import { contracts } from "@/lib/contracts";
 import {
   fmtUsd,
+  fmtUsdExact,
   fmtUsdg,
   MARKETS,
   MOCK_POSITIONS,
@@ -34,7 +35,21 @@ const sanitizeAmount = (raw: string) => {
 
 const NOT_LIVE_TOAST = "FarmentaMarket contracts are not deployed yet — this action goes live at launch.";
 
+/** True after hydration; false during SSR — avoids a server/client markup mismatch. */
+const emptySubscribe = () => () => {};
+const useMounted = () =>
+  useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
+
 const marketOf = (marketId: string) => MARKETS.find((m) => m.id === marketId) ?? MARKETS[0];
+
+const ltvPct = (ltv: number) => Math.round(ltv * 100);
+
+/** Floor to 2 decimals so the MAX button can never exceed the true max. */
+const floor2 = (n: number) => (Math.floor(n * 100) / 100).toFixed(2);
 
 /** Blockscout NFT page for a Uniswap v4 position (PositionManager ERC-721). */
 const positionUrl = (tokenId: number) =>
@@ -213,8 +228,7 @@ const td = "px-[16px] py-[16px] whitespace-nowrap";
 export function MarketView({ defaultAction }: { defaultAction: MarketAction }) {
   const { isConnected } = useAccount();
   const { openConnectModal } = useConnectModal();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
   const connected = mounted && isConnected;
 
   const [marketId, setMarketId] = useState(MARKETS[0].id);
@@ -233,7 +247,7 @@ export function MarketView({ defaultAction }: { defaultAction: MarketAction }) {
 
   const connect = () => openConnectModal?.();
 
-  const selectMarket = (id: string) => {
+  const selectMarket = (id: (typeof MARKETS)[number]["id"]) => {
     setMarketId(id);
     setSupplyAmount("");
   };
@@ -285,7 +299,7 @@ export function MarketView({ defaultAction }: { defaultAction: MarketAction }) {
                 <tr
                   key={m.id}
                   tabIndex={0}
-                  aria-selected={active}
+                  aria-current={active ? "true" : undefined}
                   onClick={() => selectMarket(m.id)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
@@ -453,9 +467,13 @@ export function MarketView({ defaultAction }: { defaultAction: MarketAction }) {
                             {fmtUsd(p.valueUsd)}
                           </span>
                         </div>
-                        <div className="mt-[14px] flex flex-wrap gap-[8px]">
+                        <p className="mt-[8px] text-[11px] leading-[14px] text-white/40">
+                          RANGE {p.range} · FEES {fmtUsdExact(p.uncollectedFeesUsd)}{" "}
+                          UNCOLLECTED · {p.composition}
+                        </p>
+                        <div className="mt-[12px] flex flex-wrap gap-[8px]">
                           <Chip tone="accent">
-                            {`${pm.name} · APR ${pm.borrowApr}% · LTV ${pm.maxLtv * 100}%`}
+                            {`${pm.name} · APR ${pm.borrowApr}% · LTV ${ltvPct(pm.maxLtv)}%`}
                           </Chip>
                           {p.inRange ? (
                             <Chip tone="ok">IN RANGE</Chip>
@@ -479,7 +497,7 @@ export function MarketView({ defaultAction }: { defaultAction: MarketAction }) {
                     value={fmtUsd(position.valueUsd)}
                   />
                   <Stat
-                    label={`MAX BORROW (${posMarket.maxLtv * 100}% LTV)`}
+                    label={`MAX BORROW (${ltvPct(posMarket.maxLtv)}% LTV)`}
                     value={`${fmtUsdg(maxBorrow)} USDG`}
                     accent
                   />
@@ -507,7 +525,7 @@ export function MarketView({ defaultAction }: { defaultAction: MarketAction }) {
                     <AmountInput
                       value={borrowAmount}
                       onChange={setBorrowAmount}
-                      onMax={() => setBorrowAmount(String(maxBorrow))}
+                      onMax={() => setBorrowAmount(floor2(maxBorrow))}
                     />
                   </div>
                 </div>

@@ -16,7 +16,14 @@ export const contracts = {
   permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
   // Third-party
   morphoBlue: "0x9D53d5E3bd5E8d4Cbfa6DB1ca238AEA02E651010" as Address,
-  chainlinkEthUsd: "0x78F3556b2b78d8d9789b0d4d7c1c9dea9f83d3A9" as Address,
+  /**
+   * Chainlink ETH/USD proxy, from the Chainlink reference data directory
+   * (feeds-robinhood-mainnet.json, fetched 2026-08-26). Never reconstruct
+   * addresses from truncated forms — a previous value here matched the
+   * truncation but had a wrong middle. Full list: docs ARCHITECTURE.md §18.
+   */
+  chainlinkEthUsd: "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9" as Address,
+  chainlinkUsdgUsd: "0x61B7e5650328764B076A108EFF5fa7282a1B9aD2" as Address,
   // Farmenta (filled in once deployed)
   marketBlueChip: undefined as Address | undefined,
   marketMeme: undefined as Address | undefined,
@@ -37,13 +44,6 @@ export const tokens = {
 
 /** Minimal ABI fragments used by the UI. */
 export const positionManagerAbi = [
-  {
-    type: "function",
-    name: "nextTokenId",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "uint256" }],
-  },
   {
     type: "function",
     name: "balanceOf",

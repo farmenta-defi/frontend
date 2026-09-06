@@ -5,6 +5,7 @@ import { useAccount, useReadContract } from "wagmi";
 import { LumenCard } from "@/components/lumen/card";
 import { PageHeader } from "@/components/page-header";
 import { contracts, positionManagerAbi } from "@/lib/contracts";
+import { chain } from "@/lib/wagmi";
 
 export default function PortfolioPage() {
   const { address, isConnected } = useAccount();
@@ -13,6 +14,9 @@ export default function PortfolioPage() {
     abi: positionManagerAbi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
+    // Pin to Robinhood Chain so the read still works when the wallet
+    // is connected to another network.
+    chainId: chain.id,
     query: { enabled: !!address },
   });
 

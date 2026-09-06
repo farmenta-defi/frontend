@@ -2,20 +2,25 @@
  * Market + LP-position domain model with mock data. The market UI reads only
  * from these exports, so swapping to live wagmi/indexer reads later is a
  * data-layer change — the components stay untouched.
+ *
+ * Risk parameters come from ./risk-params (single source, spec §6.2);
+ * only the market activity numbers (APY, utilization, TVL) are mock here.
  */
 
+import { RISK_PARAMS, type MarketTier } from "./risk-params";
+
 export type Market = {
-  id: string;
+  id: MarketTier;
   name: string;
   collateral: string;
-  supplyApy: number; // %
-  borrowApr: number; // %
-  utilization: number; // %
-  tvlUsd: number;
-  maxLtv: number; // 0..1 — max borrow against collateral value
-  liqThreshold: number; // 0..1 — HF hits 1.0 when debt reaches value × this
-  reserveFactor: number; // %
-  oracle: "CHAINLINK" | "TWAP";
+  supplyApy: number; // % (mock until contracts are live)
+  borrowApr: number; // % (mock)
+  utilization: number; // % (mock)
+  tvlUsd: number; // mock
+  maxLtv: number; // 0..1 — from RISK_PARAMS
+  liqThreshold: number; // 0..1 — from RISK_PARAMS
+  reserveFactor: number; // % — from RISK_PARAMS
+  oracle: "CHAINLINK" | "TWAP"; // from RISK_PARAMS
 };
 
 export type LpPosition = {
@@ -23,11 +28,14 @@ export type LpPosition = {
   pair: string;
   range: string;
   valueUsd: number;
-  marketId: string;
+  marketId: MarketTier;
   inRange: boolean;
   uncollectedFeesUsd: number;
   composition: string; // human-readable token breakdown of the position
 };
+
+const bc = RISK_PARAMS["blue-chip"];
+const meme = RISK_PARAMS.meme;
 
 export const MARKETS: Market[] = [
   {
@@ -38,10 +46,10 @@ export const MARKETS: Market[] = [
     borrowApr: 6.1,
     utilization: 62,
     tvlUsd: 1_240_000,
-    maxLtv: 0.7,
-    liqThreshold: 0.8,
-    reserveFactor: 15,
-    oracle: "CHAINLINK",
+    maxLtv: bc.maxLtv,
+    liqThreshold: bc.liqThreshold,
+    reserveFactor: bc.reserveFactorPct,
+    oracle: bc.oracle,
   },
   {
     id: "meme",
@@ -51,10 +59,10 @@ export const MARKETS: Market[] = [
     borrowApr: 14.3,
     utilization: 71,
     tvlUsd: 342_000,
-    maxLtv: 0.5,
-    liqThreshold: 0.65,
-    reserveFactor: 25,
-    oracle: "TWAP",
+    maxLtv: meme.maxLtv,
+    liqThreshold: meme.liqThreshold,
+    reserveFactor: meme.reserveFactorPct,
+    oracle: meme.oracle,
   },
 ];
 
@@ -82,13 +90,13 @@ export const MOCK_POSITIONS: LpPosition[] = [
   },
   {
     tokenId: 45,
-    pair: "PEPE/USDG",
+    pair: "CASHCAT/USDG",
     range: "±20%",
     valueUsd: 860,
     marketId: "meme",
     inRange: false,
     uncollectedFeesUsd: 3.1,
-    composition: "42,800,000 PEPE + 0 USDG",
+    composition: "42,800,000 CASHCAT + 0 USDG",
   },
 ];
 

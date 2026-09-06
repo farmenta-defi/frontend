@@ -1,6 +1,6 @@
 # Farmenta · Web
 
-Frontend for Farmenta — borrow USDG against Uniswap v4 LP position NFTs on Robinhood Chain (4663). Spec: [farmenta-defi/docs](https://github.com/farmenta-defi/docs).
+Frontend for Farmenta — borrow USDG against Uniswap v4 LP position NFTs on Robinhood Chain (4663). Spec: [farmenta-defi/docs](https://github.com/farmenta-defi/docs) (ARCHITECTURE.md v0.3).
 
 ## Stack
 - Next.js 16 (App Router, TypeScript, Turbopack) · pnpm
@@ -17,9 +17,11 @@ pnpm dev
 
 ## Structure
 - `src/lib/wagmi.ts` — chain (viem `robinhood`), transports, RainbowKit config
-- `src/lib/contracts.ts` — verified contract addresses + minimal ABIs
-- `src/app/{lend,borrow,portfolio,liquidations,risk}` — pages (stubs until the FarmentaMarket contracts are deployed; `risk` already shows the v0.2 parameters)
-- `src/components/` — navbar, live stats, shadcn/ui components
+- `src/lib/contracts.ts` — verified contract addresses + minimal ABIs (full address list: docs ARCHITECTURE.md §18 — never reconstruct an address from a truncated form)
+- `src/lib/risk-params.ts` — §6.2 risk parameters, **single source** for both the Risk page and the market mock data
+- `src/app/(app)/market` — functional market page (supply/borrow tabs, mock data until the FarmentaMarket contracts are deployed); `lend` and `borrow` redirect here
+- `src/app/(app)/{portfolio,liquidations,risk}` — portfolio does a live `PositionManager.balanceOf` read; liquidations is a stub; risk renders the v0.3 parameters
+- `src/components/` — LŪMEN nav/cards/grid, hero, market view, shadcn/ui (only `sonner` is kept; re-add others via the shadcn CLI when needed)
 
 ## Landing hero
 `/` is a full-screen, no-scroll hero adapted from a motionsites.ai spec (LŪMEN // ÍNDEX theme): black + ice-blue `#AFDDFF`, animated grid, node diagram, staggered entrance. Notes:
@@ -29,5 +31,5 @@ pnpm dev
 - App pages live in the `(app)` route group (own navbar/footer); the hero page has neither.
 
 ## Notes
-- Live on-chain reads (PositionManager `nextTokenId`, `balanceOf`) already work against mainnet — proof the wiring is correct.
+- The live on-chain read (`PositionManager.balanceOf` on Portfolio) already works against mainnet — proof the wiring is correct. Reads are pinned to `chainId: 4663` so a wallet on the wrong network doesn't break them.
 - Some ISPs DNS-hijack `rpc.mainnet.chain.robinhood.com`; set `NEXT_PUBLIC_RPC_URL` to a provider endpoint (Alchemy free tier) if reads fail.
