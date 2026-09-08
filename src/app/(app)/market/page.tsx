@@ -1,25 +1,15 @@
 import type { Metadata } from "next";
 
-import { MarketView } from "@/components/market/market-view";
-import { PageHeader } from "@/components/page-header";
+import { MarketDirectory } from "@/components/app/market-directory";
+import { PageHeader } from "@/components/site/page-header";
 
-export const metadata: Metadata = { title: "Market" };
+export const metadata: Metadata = { title: "Markets" };
 
-export default async function MarketPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ tab?: string | string[] }>;
-}) {
-  const { tab } = await searchParams;
-  const defaultAction = tab === "borrow" ? "borrow" : "supply";
-
+export default function MarketPage() {
   return (
     <div>
-      <PageHeader
-        title="Markets"
-        description="Supply USDG to earn interest, or borrow USDG against your Uniswap v4 LP position NFTs."
-      />
-      <MarketView defaultAction={defaultAction} />
+      <PageHeader title="Markets" description="Browse isolated USDG markets and choose a collateral pool." />
+      <MarketDirectory />
     </div>
   );
 }

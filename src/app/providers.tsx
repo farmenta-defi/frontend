@@ -19,8 +19,15 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
+        {/* RainbowKit's modal is themed to match the app surfaces: the
+            logo's cold blue on the same navy ground, medium radii. */}
         <RainbowKitProvider
-          theme={darkTheme({ accentColor: "#AFDDFF", accentColorForeground: "#000", borderRadius: "small" })}
+          theme={darkTheme({
+            accentColor: "#0b63e5",
+            accentColorForeground: "#ffffff",
+            borderRadius: "medium",
+            overlayBlur: "small",
+          })}
           modalSize="compact"
         >
           {children}

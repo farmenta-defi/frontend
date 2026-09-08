@@ -19,7 +19,7 @@ export const contracts = {
   /**
    * Chainlink ETH/USD proxy, from the Chainlink reference data directory
    * (feeds-robinhood-mainnet.json, fetched 2026-08-26). Never reconstruct
-   * addresses from truncated forms — a previous value here matched the
+   * addresses from truncated forms; a previous value here matched the
    * truncation but had a wrong middle. Full list: docs ARCHITECTURE.md §18.
    */
   chainlinkEthUsd: "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9" as Address,
