@@ -268,9 +268,25 @@ export const fmtUsd = (n: number) =>
 export const fmtUsdExact = (n: number) =>
   `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+const compact = (n: number) => {
+  const millions = n >= 1_000_000;
+  return { figure: (n / (millions ? 1_000_000 : 1_000)).toFixed(2), unit: millions ? "M" : "K" };
+};
+
 /** "$312.40K USDG" / "$1.24M USDG", the density the market table reads at. */
-export const fmtCompactUsdg = (n: number) =>
-  `$${n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : `${(n / 1_000).toFixed(2)}K`} USDG`;
+export const fmtCompactUsdg = (n: number) => {
+  const { figure, unit } = compact(n);
+  return `$${figure}${unit} USDG`;
+};
+
+/**
+ * The same number split at the magnitude, so a headline figure can set its
+ * "K"/"M" back a shade instead of shouting it at the same weight as the digits.
+ */
+export const compactUsdgParts = (n: number) => {
+  const { figure, unit } = compact(n);
+  return { value: `$${figure}`, unit, inToken: `${figure}${unit} USDG` };
+};
 
 export const fmtUsdg = (n: number) =>
   n.toLocaleString("en-US", { maximumFractionDigits: 2 });
