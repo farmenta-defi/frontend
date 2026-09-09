@@ -18,7 +18,12 @@ export type AssetId =
   | "arbitrum"
   | "ETH"
   | "WETH"
+  | "cbBTC"
+  | "NVDA"
   | "PONS"
+  | "PENGU"
+  | "AI"
+  | "MEME"
   | "USDG"
   | "USDC"
   | "USDT";
@@ -52,8 +57,15 @@ const marks: Record<AssetId, Mark> = {
   // ground, so it gets the light disc it is normally shown on.
   ETH: { src: "/ethereum-logo.svg", name: "Ether", round: true, disc: "#eef1f6", zoom: "62%" },
   WETH: { src: "/ethereum-logo.svg", name: "Wrapped Ether", round: true, disc: "#eef1f6", zoom: "62%" },
-  // A square white PNG; the mask is what turns it into a token.
+  // Already drawn as a disc on nothing, so the mask only has to follow its edge.
+  cbBTC: { src: "/cbbtc-logo.png", name: "Coinbase Wrapped BTC", round: true },
+  // The five below are square PNGs whose art runs to the canvas edge; the mask
+  // is what turns each one into a token, and it takes their corners with it.
+  NVDA: { src: "/nvda-logo.png", name: "Nvidia", round: true },
   PONS: { src: "/pons-logo.png", name: "PONS", round: true },
+  PENGU: { src: "/pengu-logo.png", name: "Pudgy Penguins", round: true },
+  AI: { src: "/ai-logo.png", name: "Artificial Inu", round: true },
+  MEME: { src: "/meme-logo.png", name: "A Meme Coin", round: true },
   USDG: { src: "/usdg-logo.svg", name: "USDG", round: true },
   USDC: { src: "/usdc-logo.svg", name: "USD Coin", round: true },
   // A hexagon, not a disc, so it sits a little shorter than its neighbours.
