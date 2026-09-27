@@ -243,12 +243,6 @@
   box-shadow: var(--edge-highlight);
 }
 
-@utility surface-flat {
-  background-color: rgba(11, 18, 32, 0.6);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
-
 @utility brand-fill {
   background-image: var(--brand-gradient);
   color: #ffffff;
@@ -277,19 +271,6 @@
   }
 }
 
-/* Hairline that fades at both ends, used to separate landing sections
-   without drawing a hard rule across the page. */
-@utility rule-fade {
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(148, 178, 214, 0.22) 22%,
-    rgba(148, 178, 214, 0.22) 78%,
-    transparent
-  );
-}
-
 /* ==================================================================
    Motion: short, eased, and switched off for reduced-motion users.
    ================================================================== */
@@ -302,15 +283,6 @@
   to {
     opacity: 1;
     transform: none;
-  }
-}
-
-@keyframes fmt-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
   }
 }
 
@@ -350,10 +322,6 @@
   opacity: 0;
   animation: fmt-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-.fade {
-  opacity: 0;
-  animation: fmt-fade 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
 .pop {
   opacity: 0;
   animation: fmt-scale 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -367,7 +335,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .rise,
-  .fade,
   .pop {
     opacity: 1;
     animation: none;

@@ -1,12 +1,10 @@
-import { cva, type VariantProps } from "class-variance-authority";
-import type { ButtonHTMLAttributes } from "react";
-
-import { cn } from "@/lib/utils";
+import { cva } from "class-variance-authority";
 
 /**
- * One button, four intents. `primary` carries the logo's cold gradient;
- * `danger` is the only place the logo's red is allowed on a control,
- * because on this site red means a position is being taken away.
+ * One button, four intents, as classes so a link can wear them too.
+ * `primary` carries the logo's cold gradient; `danger` is the only place the
+ * logo's red is allowed on a control, because on this site red means a
+ * position is being taken away.
  */
 export const buttonClasses = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg font-medium transition-[background-color,border-color,box-shadow,filter,transform] duration-200 focus-ring disabled:pointer-events-none disabled:opacity-40",
@@ -30,10 +28,3 @@ export const buttonClasses = cva(
     defaultVariants: { variant: "primary", size: "md" },
   },
 );
-
-export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
-  VariantProps<typeof buttonClasses>;
-
-export function Button({ className, variant, size, ...props }: ButtonProps) {
-  return <button className={cn(buttonClasses({ variant, size }), className)} {...props} />;
-}

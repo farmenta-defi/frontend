@@ -85,6 +85,3 @@ export const RISK_PARAMS: Record<MarketTier, RiskParams> = {
     irm: { kinkPct: 70, slope1Pct: 8, slope2Pct: 100 },
   },
 };
-
-/** Version of ARCHITECTURE.md these numbers were copied from. */
-export const SPEC_VERSION = "v0.9";

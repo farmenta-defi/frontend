@@ -7,11 +7,11 @@ import { VortexGlow } from "@/components/ui/logo";
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden">
+    <section className="relative flex flex-1 items-center overflow-hidden">
       <VortexGlow size={900} opacity={0.4} blur={80} className="-right-64 -top-80 hidden lg:block" />
       <VortexGlow size={560} opacity={0.22} blur={64} className="-right-64 -top-56 lg:hidden" />
 
-      <div className="relative mx-auto grid w-full max-w-6xl items-center gap-14 px-5 pb-20 pt-16 sm:px-8 sm:pb-28 sm:pt-24 lg:grid-cols-[1.1fr_auto]">
+      <div className="relative mx-auto grid w-full max-w-6xl items-center gap-14 px-5 py-12 sm:px-8 sm:py-16 lg:grid-cols-[1.1fr_auto]">
         <div>
           <h1
             className="rise font-display max-w-[15ch] text-balance text-[40px] font-semibold leading-[1.06] tracking-[-0.03em] sm:max-w-2xl sm:text-[58px]"
@@ -42,7 +42,7 @@ export function Hero() {
               rel="noreferrer"
               className={buttonClasses({ variant: "secondary", size: "lg" })}
             >
-              Read the spec
+              Read docs
               <ArrowUpRight className="size-[18px]" strokeWidth={1.75} />
             </a>
           </div>

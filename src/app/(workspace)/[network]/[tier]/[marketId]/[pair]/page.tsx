@@ -1,12 +1,16 @@
-import { ArrowLeft, ArrowUpRight, Info } from "lucide-react";
+import { ArrowLeft, Info } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MarketActionPanel } from "@/components/app/market-action-panel";
+import { PoolActivity } from "@/components/app/pool-activity";
+import { PoolMarketChart } from "@/components/app/pool-market-chart";
+import { PoolRates } from "@/components/app/pool-rates";
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { Badge } from "@/components/ui/badge";
 import { InfoList, InfoRow } from "@/components/ui/field";
+import { Tabs } from "@/components/ui/tabs";
 import {
   COLLATERAL_POOLS,
   compactUsdgParts,
@@ -15,7 +19,7 @@ import {
   MARKETS,
   NETWORKS,
 } from "@/lib/markets";
-import { RISK_PARAMS, SPEC_VERSION } from "@/lib/risk-params";
+import { RISK_PARAMS } from "@/lib/risk-params";
 
 /**
  * One listed collateral pool, addressed the way the URL reads it:
@@ -88,6 +92,23 @@ function Metric({
         <span className="text-steel-500">{unit}</span>
       </p>
       <p className="tnum mt-2.5 text-[12px] text-steel-500">{sub}</p>
+    </div>
+  );
+}
+
+/**
+ * Heads a section drawn from generated history. The label is not decoration:
+ * a chart of invented balances without it would read as the pool's record.
+ */
+function SectionHeading({ id, children }: { id: string; children: string }) {
+  return (
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <h2 id={id} className="text-[17px] font-semibold text-foreground">
+        {children}
+      </h2>
+      <span title="The contracts are not deployed yet, so this history is generated.">
+        <Badge tone="neutral">Simulated</Badge>
+      </span>
     </div>
   );
 }
@@ -168,81 +189,77 @@ export default async function MarketDetailPage({ params }: { params: Promise<Rou
             />
           </section>
 
-          <div className="mt-10 space-y-10">
-            <section aria-labelledby="pool-identity">
-              <h2 id="pool-identity" className="text-[17px] font-semibold text-foreground">
-                Pool
-              </h2>
-              <InfoList className="mt-4">
-                <InfoRow label="Network">
-                  {chain.name} · chain {chain.chainId}
-                </InfoRow>
-                <InfoRow label="Loan asset">USDG</InfoRow>
-                <InfoRow label="Collateral">Uniswap v4 {pool.pair} LP NFT</InfoRow>
-                <InfoRow label="Priced by">{risk.priceSource}</InfoRow>
-                <InfoRow label="Utilization">{utilization.toFixed(1)}%</InfoRow>
-                <InfoRow label="Available to borrow">{fmtUsd(availableUsd)}</InfoRow>
-              </InfoList>
-              <div className="mt-5">
-                <p className="label-xs">Pool ID</p>
-                <p className="mt-2 break-all font-mono text-[12px] leading-[18px] text-steel-300">
-                  {pool.poolId}
-                </p>
-              </div>
-              <p className="mt-5 text-[13px] leading-[21px] text-steel-400">
-                Lenders here supply into the shared <strong className="font-medium text-foreground">{market.name}</strong>{" "}
-                market, not into this pool alone. Bad debt is absorbed by reserves first, and anything
-                left over is shared by every USDG depositor in that market.
-              </p>
-            </section>
-
-            <section aria-labelledby="risk-parameters">
-              <h2 id="risk-parameters" className="text-[17px] font-semibold text-foreground">
-                Risk parameters
-              </h2>
-              <p className="mt-1.5 text-[12px] text-steel-500">
-                Tier presets from ARCHITECTURE.md {SPEC_VERSION} §6.2. A listed pool may only deviate
-                from these in the stricter direction.
-              </p>
-              <InfoList className="mt-4">
-                <InfoRow label="Max LTV at borrow">{pct(risk.maxLtv)}</InfoRow>
-                <InfoRow label="Liquidation threshold">{pct(risk.liqThreshold)}</InfoRow>
-                <InfoRow label="Liquidator bonus">{pct(risk.liquidatorBonus)}</InfoRow>
-                <InfoRow label="Protocol liquidation fee">{risk.protocolLiqFeePct}% of repay</InfoRow>
-                <InfoRow label="Close factor">{risk.closeFactor}</InfoRow>
-                <InfoRow label="Debt cap, this pool">{risk.poolDebtCap}</InfoRow>
-                <InfoRow label="Debt cap, whole market">{fmtUsd(risk.marketDebtCapUsd)}</InfoRow>
-                <InfoRow label="Minimum debt">{fmtUsd(risk.minDebtUsd)}</InfoRow>
-                <InfoRow label="Minimum position">{fmtUsd(risk.minPositionUsd)}</InfoRow>
-                <InfoRow label="Spot rule at borrow">{risk.spotRuleAtBorrow}</InfoRow>
-                <InfoRow label="Uncollected fees counted">
-                  max {risk.feeCapPctOfPrincipal}% of principal
-                </InfoRow>
-                <InfoRow label="Reserve factor">{risk.reserveFactorPct}% of interest</InfoRow>
-                <InfoRow label="Reserve floor">{risk.reserveFloorPct}% of total assets</InfoRow>
-                <InfoRow label="Interest rate model">
-                  kink {risk.irm.kinkPct}% · slope {risk.irm.slope1Pct}% / {risk.irm.slope2Pct}%
-                </InfoRow>
-              </InfoList>
-            </section>
+          <div className="mt-10">
+            <Tabs
+              label="Pool details"
+              tabs={[
+                {
+                  id: "pool",
+                  label: "Pool",
+                  panel: (
+                    <>
+                      <InfoList className="border-t-0">
+                        <InfoRow label="Network">
+                          {chain.name} · chain {chain.chainId}
+                        </InfoRow>
+                        <InfoRow label="Loan asset">USDG</InfoRow>
+                        <InfoRow label="Collateral">Uniswap v4 {pool.pair} LP NFT</InfoRow>
+                        <InfoRow label="Priced by">{risk.priceSource}</InfoRow>
+                        <InfoRow label="Utilization">{utilization.toFixed(1)}%</InfoRow>
+                        <InfoRow label="Available to borrow">{fmtUsd(availableUsd)}</InfoRow>
+                      </InfoList>
+                      <div className="mt-5">
+                        <p className="label-xs">Pool ID</p>
+                        <p className="mt-2 break-all font-mono text-[12px] leading-[18px] text-steel-300">
+                          {pool.poolId}
+                        </p>
+                      </div>
+                    </>
+                  ),
+                },
+                {
+                  id: "risk",
+                  label: "Risk parameters",
+                  panel: (
+                    <InfoList className="border-t-0">
+                      <InfoRow label="Max LTV at borrow">{pct(risk.maxLtv)}</InfoRow>
+                      <InfoRow label="Liquidation threshold">{pct(risk.liqThreshold)}</InfoRow>
+                      <InfoRow label="Liquidator bonus">{pct(risk.liquidatorBonus)}</InfoRow>
+                      <InfoRow label="Protocol liquidation fee">{risk.protocolLiqFeePct}% of repay</InfoRow>
+                      <InfoRow label="Close factor">{risk.closeFactor}</InfoRow>
+                      <InfoRow label="Debt cap, this pool">{risk.poolDebtCap}</InfoRow>
+                      <InfoRow label="Debt cap, whole market">{fmtUsd(risk.marketDebtCapUsd)}</InfoRow>
+                      <InfoRow label="Reserve factor">{risk.reserveFactorPct}% of interest</InfoRow>
+                      <InfoRow label="Reserve floor">{risk.reserveFloorPct}% of total assets</InfoRow>
+                      <InfoRow label="Interest rate model">
+                        kink {risk.irm.kinkPct}% · slope {risk.irm.slope1Pct}% / {risk.irm.slope2Pct}%
+                      </InfoRow>
+                    </InfoList>
+                  ),
+                },
+              ]}
+            />
           </div>
 
-          <div className="mt-10 flex flex-wrap items-center justify-between gap-4 border-t border-border/70 pt-5 text-[12px] text-steel-500">
-            <Link href="/risk" className="focus-ring rounded text-brand-300 hover:underline">
-              How liquidation works
-            </Link>
-            <a
-              href="https://github.com/farmenta-defi/docs/blob/main/ARCHITECTURE.md"
-              target="_blank"
-              rel="noreferrer"
-              className="focus-ring inline-flex items-center gap-1 rounded text-brand-300 hover:underline"
-            >
-              Read the spec <ArrowUpRight className="size-3.5" />
-            </a>
+          <div className="mt-12 space-y-12">
+            <section aria-labelledby="market-history">
+              <SectionHeading id="market-history">Market</SectionHeading>
+              <PoolMarketChart pool={pool} />
+            </section>
+
+            <section aria-labelledby="rate-history">
+              <SectionHeading id="rate-history">Rates</SectionHeading>
+              <PoolRates pool={pool} supplyApyPct={market.supplyApy} />
+            </section>
+
+            <section aria-labelledby="activity">
+              <SectionHeading id="activity">Activity</SectionHeading>
+              <PoolActivity pool={pool} />
+            </section>
           </div>
         </div>
 
-        <aside aria-label="Supply or borrow" className="lg:sticky lg:top-8 lg:self-start">
+        <aside aria-label="Supply or borrow" className="lg:sticky lg:top-24 lg:self-start">
           <MarketActionPanel pool={pool} />
         </aside>
       </div>

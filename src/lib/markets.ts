@@ -41,18 +41,6 @@ export type LpPosition = {
   status: "healthy" | "warning" | "critical" | "liquidatable";
 };
 
-export type Liquidation = {
-  id: string;
-  positionId: number;
-  borrower: string;
-  collateral: string;
-  debtUsd: number;
-  healthFactor: number;
-  threshold: number;
-  bonus: number;
-  status: "warning" | "at-risk" | "liquidatable";
-};
-
 const bc = RISK_PARAMS["blue-chip"];
 const meme = RISK_PARAMS.meme;
 
@@ -289,42 +277,6 @@ export const MOCK_POSITIONS: LpPosition[] = [
   },
 ];
 
-export const MOCK_LIQUIDATIONS: Liquidation[] = [
-  {
-    id: "liq-001",
-    positionId: 45,
-    borrower: "0x7a2F…91c4",
-    collateral: "PONS/USDG #45",
-    debtUsd: 620,
-    healthFactor: 0.55,
-    threshold: 0.4,
-    bonus: 0.1,
-    status: "liquidatable",
-  },
-  {
-    id: "liq-002",
-    positionId: 98,
-    borrower: "0xB40d…2aa8",
-    collateral: "WETH/USDG #98",
-    debtUsd: 2_850,
-    healthFactor: 1.04,
-    threshold: 0.75,
-    bonus: 0.05,
-    status: "at-risk",
-  },
-  {
-    id: "liq-003",
-    positionId: 212,
-    borrower: "0x1d88…c02e",
-    collateral: "ETH/USDG #212",
-    debtUsd: 8_140,
-    healthFactor: 1.12,
-    threshold: 0.75,
-    bonus: 0.05,
-    status: "warning",
-  },
-];
-
 export const MOCK_USDG_BALANCE = 5_000;
 
 export const fmtUsd = (n: number) =>
@@ -355,10 +307,3 @@ export const compactUsdgParts = (n: number) => {
 
 export const fmtUsdg = (n: number) =>
   n.toLocaleString("en-US", { maximumFractionDigits: 2 });
-
-/**
- * Every activity number above (APY, APR, utilisation, TVL) and every
- * position below is placeholder data: the FarmentaMarket contracts are
- * not deployed yet. Any surface that renders them must say so. A
- * lending UI that shows invented yields without a label is lying.
- */

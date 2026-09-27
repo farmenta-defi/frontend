@@ -73,7 +73,7 @@ const marks: Record<AssetId, Mark> = {
 };
 
 /** The ticker as written in pair strings, or null for anything unlisted. */
-export function assetIdFor(symbol: string): AssetId | null {
+function assetIdFor(symbol: string): AssetId | null {
   return symbol in marks ? (symbol as AssetId) : null;
 }
 

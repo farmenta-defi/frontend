@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  * object, so at small sizes it gets a faint cold halo behind it;
  * otherwise it dissolves into the navy ground.
  */
-export function LogoMark({
+function LogoMark({
   size = 32,
   className,
   priority = false,

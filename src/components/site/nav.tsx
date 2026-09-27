@@ -10,11 +10,9 @@ import { buttonClasses } from "@/components/ui/button";
 import { WalletButton } from "@/components/site/wallet-button";
 import { cn } from "@/lib/utils";
 
-export const NAV_ITEMS = [
+const NAV_ITEMS = [
   { label: "Markets", href: "/market" },
   { label: "Portfolio", href: "/portfolio" },
-  { label: "Liquidations", href: "/liquidations" },
-  { label: "Risk", href: "/risk" },
 ] as const;
 
 /**
