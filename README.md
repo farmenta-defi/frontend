@@ -1,6 +1,6 @@
 # Farmenta · Web
 
-Frontend for Farmenta. Borrow USDG against Uniswap v4 LP position NFTs on Robinhood Chain (4663). Spec: [farmenta-defi/docs](https://github.com/farmenta-defi/docs) (ARCHITECTURE.md **v0.9**).
+Frontend for Farmenta. Borrow USDG against Uniswap v4 LP position NFTs on Robinhood Chain (4663). Documentation: [tech-docs-pearl.vercel.app](https://tech-docs-pearl.vercel.app/). Built against spec **v0.9**.
 
 ## Stack
 - Next.js 16 (App Router, TypeScript, Turbopack) · pnpm
