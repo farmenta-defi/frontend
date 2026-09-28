@@ -4,7 +4,7 @@ import { chain } from "@/lib/chain";
 
 import { marketAbi } from "./contracts";
 import { ActionError, toActionError } from "./errors";
-import { repayGate, supplyGate, type Gate } from "./gates";
+import { depositCollateralGate, repayGate, supplyGate, type Gate } from "./gates";
 import { signCollateralPermit } from "./permit";
 import { readLenderState, readPosition, type Clients, type MarketRefs } from "./reads";
 
@@ -18,9 +18,10 @@ import { readLenderState, readPosition, type Clients, type MarketRefs } from "./
  * is refused by viem before the request reaches it.
  *
  * Approvals are for the amount being moved, never unlimited. An action that
- * starts with an approval runs its gate first, on state read for it: the
- * action behind an approval cannot be simulated until the approval is mined,
- * and an approval for a deposit that will be refused is gas for nothing.
+ * starts with an approval or a signature runs its gate first, on state read
+ * for it: the call behind it cannot be simulated until the approval is mined
+ * or the permit signed, and neither should be asked for a call that will be
+ * refused.
  */
 export type Step = {
   /** Which transaction of the action this is. */
@@ -126,10 +127,13 @@ export function withdraw(clients: Clients, { market }: MarketRefs, assets: bigin
  * spender, then `depositCollateralWithPermit`. One transaction; no separate
  * approval is sent.
  */
-export async function depositCollateral(clients: Clients, { market }: MarketRefs, tokenId: bigint, onStep?: Progress) {
+export async function depositCollateral(clients: Clients, refs: MarketRefs, tokenId: bigint, onStep?: Progress) {
+  const { market } = refs;
   let permit;
   try {
     await requireChain(clients);
+    const position = await readPosition(clients.publicClient, refs, tokenId, clients.walletClient.account.address);
+    pass(depositCollateralGate(position));
     onStep?.({ name: "permit", phase: "sign" });
     permit = await signCollateralPermit(clients, market, tokenId);
   } catch (error) {

@@ -54,11 +54,11 @@ export function withdrawGate(state: LenderState, assets: Amount): Gate {
 
 /** `poolId` is the pool whose page the user is on; a position from another pool does not belong there. */
 export function depositCollateralGate(position: PositionState, poolId?: Hex): Gate {
-  if (position.place === "missing") return refuse("PositionNotFound", `Position #${position.tokenId} does not exist.`);
+  if (position.place === "missing") return refuse("PositionNotFound", "This position does not exist any more.");
   if (position.place === "collateral") return refuse("PositionAlreadyHeld", "This position is already deposited.");
-  if (position.place === "elsewhere") return refuse("NotTheOwner", `Position #${position.tokenId} is not in your wallet.`);
+  if (position.place === "elsewhere") return refuse("NotTheOwner", "This position is not in your wallet.");
   if (poolId && position.poolId && !samePool(poolId, position.poolId)) {
-    return refuse("WrongPool", `Position #${position.tokenId} provides liquidity to another pool.`);
+    return refuse("WrongPool", "This position provides liquidity to another pool.");
   }
   if (position.paused) return PAUSED("depositing collateral");
   if (position.pool.status === "unlisted") {
@@ -76,7 +76,7 @@ export function depositCollateralGate(position: PositionState, poolId?: Hex): Ga
 const notCollateral = (position: PositionState) =>
   position.place === "collateral"
     ? null
-    : refuse("NotTheDepositor", `Position #${position.tokenId} is not deposited as your collateral.`);
+    : refuse("NotTheDepositor", "This position is not deposited as your collateral.");
 
 export function borrowGate(position: PositionState, amount: Amount): Gate {
   const refused = notCollateral(position);

@@ -168,9 +168,12 @@ describe("a frozen pool", () => {
       });
 
       const nonce = await nonceOf(borrower.address);
-      expect((await refusal(depositCollateral(borrower.clients, blueChip, DEBT_FREE))).code).toBe(
-        "PoolFrozenForNewPositions",
+      const steps: string[] = [];
+      const refused = await refusal(
+        depositCollateral(borrower.clients, blueChip, DEBT_FREE, (step) => steps.push(step.name)),
       );
+      expect(refused.code).toBe("PoolFrozenForNewPositions");
+      expect(steps, "a pool frozen a moment ago cost the user a signature").toEqual([]);
       expect((await refusal(borrow(borrower.clients, blueChip, INDEBTED, 50n * USDG))).code).toBe(
         "PoolNotOpenForBorrowing",
       );

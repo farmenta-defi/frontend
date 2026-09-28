@@ -125,24 +125,28 @@ describe("deposit collateral", () => {
       expect(depositCollateralGate(state)).toMatchObject({ ok: false, code: "PoolNotListed" });
       const nonce = await nonceOf(user.address);
 
-      const refused = await refusal(depositCollateral(user.clients, blueChip, POSITIONS.unlistedPool));
+      const steps: string[] = [];
+      const refused = await refusal(
+        depositCollateral(user.clients, blueChip, POSITIONS.unlistedPool, (step) => steps.push(step.name)),
+      );
 
       expect(refused.code).toBe("PoolNotListed");
+      expect(steps, "a signature was asked for").toEqual([]);
       expect(await nonceOf(user.address), "a transaction was sent").toBe(nonce);
       expect(await ownerOf(POSITIONS.unlistedPool)).toBe(user.address);
     });
 
-    it("refuses a permit signed by someone who does not own the position", async () => {
+    it("refuses someone who does not own the position before asking them for a signature", async () => {
       const owner = await borrowerWith(TOKEN);
       const stranger = await newUser("stranger");
-      expect(depositCollateralGate(await position(TOKEN, stranger.address))).toMatchObject({
-        ok: false,
-        code: "NotTheOwner",
-      });
+      const steps: string[] = [];
 
-      const refused = await refusal(depositCollateral(stranger.clients, blueChip, TOKEN));
+      const refused = await refusal(
+        depositCollateral(stranger.clients, blueChip, TOKEN, (step) => steps.push(step.name)),
+      );
 
-      expect(refused.code).toBe("PermitRejected");
+      expect(refused.code).toBe("NotTheOwner");
+      expect(steps).toEqual([]);
       expect(await ownerOf(TOKEN)).toBe(owner.address);
     });
   });
