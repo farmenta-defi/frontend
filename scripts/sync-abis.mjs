@@ -22,9 +22,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT_DIR = join(ROOT, "src/abis");
 const SOURCE_FILE = join(OUT_DIR, "source.json");
 
-// Output file -> the forge artifacts it is assembled from and the functions kept from them.
-// Only what the app calls is kept, so the list below is the whole contract surface of the
-// frontend: a function missing here cannot be called by accident.
+// Output file -> the forge artifacts it is assembled from, and the functions and events kept
+// from them. Only what the app calls or reads is kept, so the list below is the whole contract
+// surface of the frontend: a function missing here cannot be called by accident.
 // PositionManager is four artifacts because the ERC-721 surface, the permit and the
 // unordered nonces are declared in interfaces IPositionManager does not inherit from.
 const TARGETS = {
@@ -52,7 +52,14 @@ const TARGETS = {
       "policy",
       "positionManager",
       "tier",
+      "valuer",
     ],
+    // Which positions a wallet deposited: `owner` is indexed.
+    events: ["CollateralDeposited"],
+  },
+  PositionValuer: {
+    artifacts: ["PositionValuer.sol/PositionValuer.json"],
+    functions: ["value"],
   },
   MarketLens: {
     artifacts: ["MarketLens.sol/MarketLens.json"],
@@ -70,6 +77,8 @@ const TARGETS = {
       "IUnorderedNonce.sol/IUnorderedNonce.json",
     ],
     functions: ["DOMAIN_SEPARATOR", "getApproved", "getPoolAndPositionInfo", "nonces", "ownerOf"],
+    // Which positions a wallet received: `to` is indexed.
+    events: ["Transfer"],
   },
 };
 
@@ -174,18 +183,27 @@ function write(name, note, abi) {
 }
 
 for (const [name, target] of Object.entries(TARGETS)) {
-  const functions = new Map();
+  const wanted = { function: target.functions, event: target.events ?? [] };
+  const kept = { function: new Map(), event: new Map() };
   for (const artifact of target.artifacts) {
     for (const entry of artifactAbi(artifact)) {
-      if (entry.type === "function" && target.functions.includes(entry.name)) functions.set(signature(entry), entry);
+      // `Object.hasOwn`: an ABI has a "constructor" entry, and so does every object.
+      if (Object.hasOwn(wanted, entry.type) && wanted[entry.type].includes(entry.name)) {
+        kept[entry.type].set(signature(entry), entry);
+      }
     }
   }
-  const found = new Set([...functions.values()].map((entry) => entry.name));
-  const missing = target.functions.filter((wanted) => !found.has(wanted));
-  if (missing.length > 0) fail(`${name} has no function ${missing.join(", ")} at ${source.commit}`);
+  for (const type of ["function", "event"]) {
+    const found = new Set([...kept[type].values()].map((entry) => entry.name));
+    const missing = wanted[type].filter((name) => !found.has(name));
+    if (missing.length > 0) fail(`${name} has no ${type} ${missing.join(", ")} at ${source.commit}`);
+  }
 
-  write(name, "Only the functions the app calls; the list is in scripts/sync-abis.mjs.", sorted(functions));
-  console.log(`abi:sync: src/abis/${name}.ts (${functions.size} functions)`);
+  write(name, "Only what the app calls or reads; the list is in scripts/sync-abis.mjs.", [
+    ...sorted(kept.function),
+    ...sorted(kept.event),
+  ]);
+  console.log(`abi:sync: src/abis/${name}.ts (${kept.function.size} functions, ${kept.event.size} events)`);
 }
 
 const errors = new Map();
