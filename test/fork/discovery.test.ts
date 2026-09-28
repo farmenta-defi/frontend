@@ -1,6 +1,6 @@
-import { createPublicClient, http } from "viem";
+import { createPublicClient, custom, http, type EIP1193RequestFn } from "viem";
 import { robinhood } from "viem/chains";
-import { describe, expect, it } from "vitest";
+import { describe, expect, inject, it } from "vitest";
 
 import { borrow, depositCollateral, supply, withdrawCollateral } from "@/lib/onchain/actions";
 import {
@@ -12,7 +12,7 @@ import {
 import { feeLabel } from "@/lib/onchain/range";
 import { readPosition, type ReadClient } from "@/lib/onchain/reads";
 
-import { ETH_USDG, FORK_BLOCK, POSITIONS, WETH_USDG } from "./support/constants";
+import { ETH_USDG, FORK_BLOCK, POSITION_MANAGER, POSITIONS, WETH_USDG } from "./support/constants";
 import {
   blueChip,
   dealUsdg,
@@ -41,6 +41,18 @@ const find = (account: `0x${string}`) => discoverPositions(clients, markets, acc
 const USDG = 1_000_000n;
 const idsOf = (positions: readonly Discovered[]) => positions.map((position) => position.tokenId);
 
+/** A client that reads everything from the fork except the logs of `address`, which fail. */
+function logsFailingFor(address: string): ReadClient {
+  const forward = http(inject("forkUrl"))({ chain: robinhood, retryCount: 0 }).request;
+  const request = (async ({ method, params }) => {
+    const filter = (params as [{ address?: string }] | undefined)?.[0];
+    if (method === "eth_getLogs" && filter?.address?.toLowerCase() === address.toLowerCase()) {
+      throw new Error("HTTP 429: Too Many Requests");
+    }
+    return forward({ method, params });
+  }) as EIP1193RequestFn;
+  return createPublicClient({ chain: robinhood, transport: custom({ request }, { retryCount: 0 }) }) as ReadClient;
+}
 
 describe("finding a wallet's positions", () => {
   isolateEachTest();
@@ -140,6 +152,30 @@ describe("finding a wallet's positions", () => {
       expect(idsOf(found)).toEqual([POSITIONS.ethUsdgAboveRange]);
       expect(found[0].liquidity).toBeGreaterThan(0n);
       expect(idsOf(inPool(found, ETH_USDG.id))).toEqual([POSITIONS.ethUsdgAboveRange]);
+    });
+
+    it("reports the failure when only PositionManager's logs cannot be read", async () => {
+      const user = await newUser("holder");
+      await givePosition(user.address, POSITIONS.ethUsdgInRange);
+      await givePosition(user.address, POSITIONS.wethUsdgInRange);
+      await depositCollateral(user.clients, blueChip, POSITIONS.ethUsdgInRange);
+      const logs = logsFailingFor(POSITION_MANAGER);
+
+      // The market's logs answer, so the collateral could be listed. It must not be, alone:
+      // that list would silently leave out what is in the wallet.
+      await expect(discoverPositions({ logs, reads: publicClient }, markets, user.address, FORK_BLOCK)).rejects.toThrow(
+        /429/,
+      );
+    });
+
+    it("reports the failure when only a market's logs cannot be read", async () => {
+      const user = await newUser("holder");
+      await givePosition(user.address, POSITIONS.ethUsdgInRange);
+      const logs = logsFailingFor(blueChip.market);
+
+      await expect(discoverPositions({ logs, reads: publicClient }, markets, user.address, FORK_BLOCK)).rejects.toThrow(
+        /429/,
+      );
     });
 
     it("a wallet whose positions are all in other pools gets the empty state on this pool's page", async () => {
