@@ -10,12 +10,18 @@ import type { MarketTier } from "./risk-params";
  * chosen with `NEXT_PUBLIC_FARMENTA_DEPLOYMENT`; `next.config.ts` hands its
  * contents to the bundle.
  *
- * Only the market, its lens and the policy are taken from the file. What a
+ * Only the market (with the block it was deployed in), its lens and the
+ * policy are taken from the file. What a
  * contract reports itself (`asset()`, `policy()`, `positionManager()`) is read
  * from the contract, so a market cannot be paired with the wrong token by a
  * slip in a file.
  */
-export type MarketContracts = { market: Address; lens: Address };
+export type MarketContracts = {
+  market: Address;
+  /** The block the market was deployed in: where its logs start. */
+  startBlock: bigint;
+  lens: Address;
+};
 
 export type Deployment = {
   chainId: number;
@@ -34,6 +40,14 @@ function contractAddress(value: unknown, path: string): Address {
   return getAddress(address);
 }
 
+function startBlockOf(value: unknown, path: string): bigint {
+  const startBlock = (value as { startBlock?: unknown } | null | undefined)?.startBlock;
+  if (typeof startBlock !== "number" || !Number.isSafeInteger(startBlock) || startBlock < 0) {
+    throw new Error(`deployment: ${path}.startBlock must be the block the contract was deployed in`);
+  }
+  return BigInt(startBlock);
+}
+
 /** Reads a manifest. Throws on anything that is not one, rather than leaving a hole to call into. */
 export function parseDeployment(raw: unknown): Deployment {
   if (typeof raw !== "object" || raw === null) throw new Error("deployment: the manifest is not an object");
@@ -47,6 +61,7 @@ export function parseDeployment(raw: unknown): Deployment {
   const lenses = (manifest.lenses ?? {}) as Record<string, unknown>;
   const pair = (tier: MarketTier): MarketContracts => ({
     market: contractAddress(markets[MANIFEST_NAME[tier]], `markets.${MANIFEST_NAME[tier]}`),
+    startBlock: startBlockOf(markets[MANIFEST_NAME[tier]], `markets.${MANIFEST_NAME[tier]}`),
     lens: contractAddress(lenses[MANIFEST_NAME[tier]], `lenses.${MANIFEST_NAME[tier]}`),
   });
 

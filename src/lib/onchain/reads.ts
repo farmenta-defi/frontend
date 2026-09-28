@@ -38,7 +38,13 @@ export type Clients = { publicClient: ReadClient; walletClient: WalletClient<Tra
 const latestBlock = (client: ReadClient) => client.getBlockNumber({ cacheTime: 0 });
 
 /** One market and what belongs to it, as `deployment` gives them. */
-export type MarketRefs = { market: Address; lens: Address; policy: Address };
+export type MarketRefs = {
+  market: Address;
+  /** The block the market was deployed in, from the manifest: where its logs start. */
+  startBlock: bigint;
+  lens: Address;
+  policy: Address;
+};
 
 export type LenderState = {
   /** USDG, as the market reports it (`asset()`). */

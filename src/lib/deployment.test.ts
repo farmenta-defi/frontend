@@ -19,10 +19,12 @@ describe("parseDeployment", () => {
       expect(deployment.collateralPolicy).toBe(getAddress("0x00000000000000000000000000000000000000c1"));
       expect(deployment.markets["blue-chip"]).toEqual({
         market: getAddress("0x00000000000000000000000000000000000000b1"),
+        startBlock: 1n,
         lens: getAddress("0x00000000000000000000000000000000000000d1"),
       });
       expect(deployment.markets.meme).toEqual({
         market: getAddress("0x00000000000000000000000000000000000000b2"),
+        startBlock: 1n,
         lens: getAddress("0x00000000000000000000000000000000000000d2"),
       });
     });
@@ -42,6 +44,15 @@ describe("parseDeployment", () => {
       const manifest = example();
       manifest.lenses = { blueChip: (manifest.lenses as Record<string, unknown>).blueChip };
       expect(() => parseDeployment(manifest)).toThrow(/lenses\.meme/);
+    });
+
+    it("refuses a market without the block its logs start at", () => {
+      const manifest = example();
+      manifest.markets = {
+        ...(manifest.markets as Record<string, unknown>),
+        blueChip: { address: "0x00000000000000000000000000000000000000b1" },
+      };
+      expect(() => parseDeployment(manifest)).toThrow(/markets\.blueChip\.startBlock/);
     });
 
     it("refuses an address that is not one", () => {

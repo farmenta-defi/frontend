@@ -23,11 +23,8 @@ import { deployer, guardian, POSITION_MANAGER, USDG, userKey } from "./constants
 /** What the harness deployed, read the way the app reads a manifest. */
 export const deployment = parseDeployment(JSON.parse(inject("manifest")));
 
-export const blueChip: MarketRefs = {
-  market: deployment.markets["blue-chip"].market,
-  lens: deployment.markets["blue-chip"].lens,
-  policy: deployment.collateralPolicy,
-};
+export const blueChip: MarketRefs = { ...deployment.markets["blue-chip"], policy: deployment.collateralPolicy };
+export const meme: MarketRefs = { ...deployment.markets.meme, policy: deployment.collateralPolicy };
 
 const transport = http(inject("forkUrl"));
 
