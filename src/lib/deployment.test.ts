@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { getAddress } from "viem";
@@ -32,6 +32,17 @@ describe("parseDeployment", () => {
     it("needs nothing but the three entries it reads", () => {
       const { chainId, collateralPolicy, markets, lenses } = example();
       expect(() => parseDeployment({ chainId, collateralPolicy, markets, lenses })).not.toThrow();
+    });
+
+    it("reads every manifest committed in deployments/", () => {
+      const dir = join(__dirname, "../../deployments");
+      const names = readdirSync(dir).filter((name) => name.endsWith(".json"));
+      expect(names).toContain("mainnet.json");
+
+      for (const name of names) {
+        const manifest: unknown = JSON.parse(readFileSync(join(dir, name), "utf8"));
+        expect(() => parseDeployment(manifest), name).not.toThrow();
+      }
     });
   });
 
