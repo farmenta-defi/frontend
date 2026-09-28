@@ -34,8 +34,10 @@ export type Progress = (step: Step) => void;
 
 type Call = { address: Address; abi: Abi; functionName: string; args: readonly unknown[] };
 
-async function send({ publicClient, walletClient }: Clients, name: Step["name"], call: Call, onStep?: Progress) {
+async function send(clients: Clients, name: Step["name"], call: Call, onStep?: Progress) {
+  const { publicClient, walletClient } = clients;
   try {
+    await requireChain(clients);
     const { request } = await publicClient.simulateContract({ ...call, account: walletClient.account, chain });
 
     onStep?.({ name, phase: "sign" });
@@ -54,6 +56,28 @@ async function send({ publicClient, walletClient }: Clients, name: Step["name"],
 
 function pass(gate: Gate) {
   if (!gate.ok) throw new ActionError(gate);
+}
+
+/**
+ * Refuses a wallet that is not on chain 4663, before anything is signed or
+ * sent. viem makes the same check when it sends through an injected wallet;
+ * asking here covers every kind of account, and the permit too, which is a
+ * signature and would otherwise be requested from a wallet on the wrong
+ * network.
+ */
+async function requireChain({ walletClient }: Clients) {
+  let walletChainId: number;
+  try {
+    walletChainId = await walletClient.getChainId();
+  } catch (error) {
+    throw toActionError(error);
+  }
+  if (walletChainId !== chain.id) {
+    throw new ActionError({
+      code: "WrongNetwork",
+      message: `Your wallet is on another network. Switch to ${chain.name} and try again.`,
+    });
+  }
 }
 
 /**
@@ -76,6 +100,7 @@ async function approve(clients: Clients, token: Address, spender: Address, amoun
 export async function supply(clients: Clients, { market }: MarketRefs, assets: bigint, onStep?: Progress) {
   const account = clients.walletClient.account.address;
   try {
+    await requireChain(clients);
     const state = await readLenderState(clients.publicClient, market, account);
     pass(supplyGate(state, assets));
     await approve(clients, state.asset, market, assets, onStep);
@@ -104,6 +129,7 @@ export function withdraw(clients: Clients, { market }: MarketRefs, assets: bigin
 export async function depositCollateral(clients: Clients, { market }: MarketRefs, tokenId: bigint, onStep?: Progress) {
   let permit;
   try {
+    await requireChain(clients);
     onStep?.({ name: "permit", phase: "sign" });
     permit = await signCollateralPermit(clients, market, tokenId);
   } catch (error) {
@@ -150,6 +176,7 @@ export const repayAllowance = (debt: bigint) => debt + debt / 1000n + 1n;
 export async function repay(clients: Clients, refs: MarketRefs, tokenId: bigint, amount: bigint | "max", onStep?: Progress) {
   const account = clients.walletClient.account.address;
   try {
+    await requireChain(clients);
     const position = await readPosition(clients.publicClient, refs, tokenId, account);
     pass(repayGate(position, amount));
     const all = amount === "max" || amount >= position.debt;
