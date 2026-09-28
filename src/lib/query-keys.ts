@@ -28,6 +28,8 @@ export const backendKeys = {
 export const chainKeys = {
   all: ["chain"] as const,
   lender: (tier: MarketTier, account: Address) => ["chain", "lender", tier, lower(account)] as const,
+  /** Which positions are the account's, from the chain's logs. */
+  positions: (account: Address) => ["chain", "positions", lower(account)] as const,
   position: (tier: MarketTier, tokenId: bigint, account: Address) =>
     ["chain", "position", tier, tokenId.toString(), lower(account)] as const,
 };
