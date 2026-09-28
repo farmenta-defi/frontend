@@ -1,10 +1,12 @@
 /**
- * Market + LP-position domain model with mock data. The market UI reads only
- * from these exports, so swapping to live wagmi/indexer reads later is a
- * data-layer change; the components stay untouched.
+ * Market and pool domain model with mock data. The market UI reads only from
+ * these exports, so swapping to the backend later is a data-layer change
+ * (FAR-71); the components stay untouched.
  *
  * Risk parameters come from ./risk-params (single source, spec §6.2);
  * only the market activity numbers (APY, utilization, TVL) are mock here.
+ * Nothing about a wallet is: balances, positions and loans are read from the
+ * chain (./onchain).
  */
 
 import { RISK_PARAMS, type MarketTier } from "./risk-params";
@@ -24,21 +26,6 @@ export type Market = {
   liquidatorBonus: number; // 0..1, from RISK_PARAMS
   reserveFactor: number; // %, from RISK_PARAMS
   oracle: "CHAINLINK" | "TWAP"; // from RISK_PARAMS
-};
-
-export type LpPosition = {
-  tokenId: number;
-  pair: string;
-  range: string;
-  valueUsd: number;
-  marketId: MarketTier;
-  inRange: boolean;
-  uncollectedFeesUsd: number;
-  composition: string; // human-readable token breakdown of the position
-  collateralUsd: number;
-  borrowedUsd: number;
-  healthFactor: number;
-  status: "healthy" | "warning" | "critical" | "liquidatable";
 };
 
 const bc = RISK_PARAMS["blue-chip"];
@@ -230,54 +217,6 @@ export const findPool = (network: string, tier: string, poolId: string, slug: st
       pool.slug === slug &&
       pool.poolId.toLowerCase() === poolId.toLowerCase(),
   ) ?? null;
-
-/** Placeholder wallet data until the indexer + contracts are live. */
-export const MOCK_POSITIONS: LpPosition[] = [
-  {
-    tokenId: 123,
-    pair: "ETH/USDG",
-    range: "±22%",
-    valueUsd: 2_400,
-    marketId: "blue-chip",
-    inRange: true,
-    uncollectedFeesUsd: 12.4,
-    composition: "0.41 ETH + 1,205 USDG",
-    collateralUsd: 2_400,
-    borrowedUsd: 0,
-    healthFactor: Infinity,
-    status: "healthy",
-  },
-  {
-    tokenId: 98,
-    pair: "WETH/USDG",
-    range: "±25%",
-    valueUsd: 5_150,
-    marketId: "blue-chip",
-    inRange: true,
-    uncollectedFeesUsd: 31.75,
-    composition: "0.88 WETH + 2,590 USDG",
-    collateralUsd: 5_150,
-    borrowedUsd: 2_850,
-    healthFactor: 1.35,
-    status: "warning",
-  },
-  {
-    tokenId: 45,
-    pair: "PONS/USDG",
-    range: "±20%",
-    valueUsd: 860,
-    marketId: "meme",
-    inRange: false,
-    uncollectedFeesUsd: 3.1,
-    composition: "42,800,000 PONS + 0 USDG",
-    collateralUsd: 860,
-    borrowedUsd: 620,
-    healthFactor: 0.55,
-    status: "liquidatable",
-  },
-];
-
-export const MOCK_USDG_BALANCE = 5_000;
 
 export const fmtUsd = (n: number) =>
   `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
