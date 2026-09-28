@@ -39,6 +39,9 @@ borrow, repay, and withdraw collateral. They live in `src/lib/onchain/`.
 - **Every transaction is simulated first.** A simulation that reverts sends nothing, and the
   contract's error is shown as a sentence (`src/lib/onchain/errors.ts`).
 - **Approvals are for the amount being moved**, never unlimited.
+- **A transaction is sent with the gas estimate, a tenth more, and 100,000 gas.** The market
+  accrues interest at the start of a call, and an estimate taken in the second of the last
+  accrual does not pay for it. Gas that is not used is not charged.
 - **Reads and writes are pinned to chain 4663.** A wallet on another network is offered the
   switch and cannot send anything until it has switched.
 - **A wallet's positions are found in the chain's logs; no token id is typed.** PositionManager
