@@ -41,9 +41,17 @@ borrow, repay, and withdraw collateral. They live in `src/lib/onchain/`.
 - **Approvals are for the amount being moved**, never unlimited.
 - **Reads and writes are pinned to chain 4663.** A wallet on another network is offered the
   switch and cannot send anything until it has switched.
-- **Positions are found by token id.** PositionManager cannot list a wallet's positions, so the
-  app keeps the ids a wallet added in this browser and reads each from the chain. The backend's
-  list replaces this when the data layer lands.
+- **A wallet's positions are found in the chain's logs; no token id is typed.** PositionManager
+  has no `ERC721Enumerable`, but its `Transfer` event indexes `to` and the market's
+  `CollateralDeposited` indexes `owner`. The app reads both, then `ownerOf` and `loanOf` for each
+  id, so a position the wallet passed on drops out. A position is shown by its pair, fee and
+  price range; the token id is a detail. The backend's list comes first when the data layer
+  lands, and this is what is left when the backend is down.
+- **The logs are read through the chain's public RPC**, whatever `NEXT_PUBLIC_RPC_URL` is: a
+  free-tier provider key refuses a log range of more than 10 blocks. A request is tried three
+  times; after that the list says it could not be loaded and offers a retry.
+- **A paid RPC key in `NEXT_PUBLIC_RPC_URL` is readable by anyone who opens the app.** Restrict
+  it to the app's domain at the provider.
 
 ## Design system
 
@@ -92,7 +100,7 @@ pure black.
 
 ## Honesty rules that are part of the design
 - **Placeholder numbers are labelled.** APY, APR, utilisation, TVL and the mock positions are invented until FarmentaMarket is deployed, and a lending UI that shows invented yields without a label is lying. Pool pages say "Simulated" on each generated section and in each headline metric's tooltip. The action rail's own figures (balances, debt, collateral value, health factor) are read from the chain. The market table does not carry a label yet and needs one.
-- **Owner powers are not on any page right now, and the spec says they must be.** Spec §15 items 9 (a single upgrade key can replace the protocol and take the collateral) and 11 (the owner can lower a liquidation threshold and make a healthy loan liquidatable) have to appear in the frontend. They were shown on `/` and `/risk`; both surfaces were removed, and the component that rendered them went with them (last present in the commit before this one, at `src/components/site/risk-disclosures.tsx`). They need a new home before launch.
+- **Owner powers are stated in the contract README and on the documentation site, not in the app.** Spec §15 items 9 (the upgrade key) and 11 (the owner can lower a liquidation threshold) are disclosed at [tech-docs-pearl.vercel.app](https://tech-docs-pearl.vercel.app/), page `risk/admin-powers`. Decided by the product owner on 28 Sep 2026 (spec v1.62); no page of this app carries them.
 - **One colour rule for the health factor.** `hfTone()` in `src/components/ui/health-bar.tsx` decides the colour everywhere, so the same number is never cyan on one page and orange on another.
 
 ## Notes
