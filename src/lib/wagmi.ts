@@ -28,5 +28,9 @@ export const config = getDefaultConfig({
   transports: {
     [chain.id]: rpcUrl ? fallback([http(rpcUrl), http()]) : http(),
   },
+  // The reads of one state are sent together, as one `eth_call` through
+  // Multicall3, instead of one request each. They pin one block already, so
+  // batching does not change what they return; it changes what they cost.
+  batch: { multicall: true },
   ssr: true,
 });
