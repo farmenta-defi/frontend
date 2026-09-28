@@ -14,6 +14,8 @@ export const USDG = fork.USDG as Address;
 export const ETH_USDG = fork.ETH_USDG as Pool;
 export const WETH_USDG = fork.WETH_USDG as Pool;
 export const deployer = fork.deployer;
+export const guardian = fork.guardian;
+export const FORK_BLOCK = fork.FORK_BLOCK;
 export const userKey = (label: string) => fork.forkKey(`user-${label}`);
 
 /** Uniswap v4 PositionManager, docs ARCHITECTURE.md §18. */

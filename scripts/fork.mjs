@@ -7,7 +7,8 @@
 // What a start does:
 //   1. `anvil` as a fork at FORK_BLOCK, the block smart-contract's fork tests pin
 //   2. smart-contract's `script/Deploy.s.sol`, default settings: the timelock owns the
-//      markets, and the deployer owns the policy until the timelock accepts it
+//      markets, and the deployer owns the policy until the timelock accepts it. `GUARDIAN`,
+//      which has no default, is a key of the fork's own
 //   3. smart-contract's `script/manifest.sh` into deployments/fork.json, then the broadcast
 //      log is deleted, as the contract README asks after a rehearsal
 //   4. the pools in LISTED_POOLS are listed on blue-chip preset terms, as the deployer
@@ -66,6 +67,8 @@ export const BLUE_CHIP_LISTING = {
 export const forkKey = (label) => keccak256(toHex(`farmenta-fork-${label}`));
 export const DEPLOYER_KEY = forkKey("deployer");
 export const deployer = privateKeyToAccount(DEPLOYER_KEY);
+/** May pause a market and freeze a pool at once. `Deploy.s.sol` refuses the deployer for it. */
+export const guardian = privateKeyToAccount(forkKey("guardian"));
 
 function fail(message) {
   throw new Error(`fork: ${message}`);
@@ -155,6 +158,7 @@ export async function startFork({ port } = {}) {
     }
 
     await client.setBalance({ address: deployer.address, value: parseEther("100") });
+    await client.setBalance({ address: guardian.address, value: parseEther("100") });
 
     // The contract repo's own scripts, with nothing of the caller's environment in the way:
     // `OWNER`, `DEPLOY_TIMELOCK` and the rest keep their defaults.
@@ -164,6 +168,7 @@ export async function startFork({ port } = {}) {
       HOME: process.env.HOME ?? "",
       FOUNDRY_PROFILE: "deploy",
       ROBINHOOD_RPC_URL: url,
+      GUARDIAN: guardian.address,
     };
     const log = join(checkout, "broadcast/Deploy.s.sol/4663");
     rmSync(log, { recursive: true, force: true });
@@ -226,7 +231,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   console.log(`fork: Farmenta is deployed on ${url} (chain 4663, block ${FORK_BLOCK} onwards)`);
   console.log(`fork: manifest written to deployments/fork.json; pools listed: ${LISTED_POOLS.map((pool) => pool.id).join(", ")}`);
   console.log("fork: run the app against it with");
-  console.log(`fork:   NEXT_PUBLIC_FARMENTA_DEPLOYMENT=fork NEXT_PUBLIC_RPC_URL=${url} pnpm dev`);
+  console.log(
+    `fork:   NEXT_PUBLIC_FARMENTA_DEPLOYMENT=fork NEXT_PUBLIC_RPC_URL=${url} NEXT_PUBLIC_LOGS_RPC_URL=${url} NEXT_PUBLIC_LOGS_FROM_BLOCK=${FORK_BLOCK} pnpm dev`,
+  );
   console.log("fork: Ctrl-C stops it; its state is gone with it");
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.on(signal, () => {

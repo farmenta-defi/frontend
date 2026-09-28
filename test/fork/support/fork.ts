@@ -18,7 +18,7 @@ import { parseDeployment } from "@/lib/deployment";
 import { marketAbi } from "@/lib/onchain/contracts";
 import type { Clients, MarketRefs, ReadClient } from "@/lib/onchain/reads";
 
-import { deployer, POSITION_MANAGER, USDG, userKey } from "./constants";
+import { deployer, guardian, POSITION_MANAGER, USDG, userKey } from "./constants";
 
 /** What the harness deployed, read the way the app reads a manifest. */
 export const deployment = parseDeployment(JSON.parse(inject("manifest")));
@@ -44,7 +44,6 @@ const nft = parseAbi([
   "function transferFrom(address from, address to, uint256 tokenId)",
 ]);
 const ownerActions = parseAbi([
-  "function owner() view returns (address)",
   "function pause()",
   "function setFrozen(bytes32 poolId, bool frozen)",
 ]);
@@ -123,12 +122,10 @@ export async function givePosition(to: Address, tokenId: bigint) {
   });
 }
 
-/** Pauses a market as its owner, the timelock, without waiting out the timelock's delay. */
+/** Pauses a market as the guardian, who may do so at once; the owner's pause waits the timelock. */
 export async function pause(market: Address) {
-  const owner = await publicClient.readContract({ address: market, abi: ownerActions, functionName: "owner" });
-  await as(owner, async () => {
-    await mined(await anvil.writeContract({ account: owner, address: market, abi: ownerActions, functionName: "pause" }));
-  });
+  const wallet = createWalletClient({ account: guardian, chain: robinhood, transport });
+  await mined(await wallet.writeContract({ address: market, abi: ownerActions, functionName: "pause" }));
 }
 
 /** Freezes a pool as the policy's owner, which is the deployer until the timelock accepts it. */
