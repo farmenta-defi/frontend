@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 import { Providers } from "./providers";
@@ -12,25 +12,29 @@ import { Providers } from "./providers";
  *   read in. Everything else.
  * - JetBrains Mono: addresses, token ids, pool ids: strings a person
  *   compares character by character.
+ *
+ * The files are in the repo (`./fonts`, see its README), not fetched from
+ * Google while building: a build that cannot reach Google fails, and one did.
+ * Each is a variable font, so one file serves every weight in its range.
  */
-const jakarta = Plus_Jakarta_Sans({
+const jakarta = localFont({
+  src: "./fonts/plus-jakarta-sans-latin.woff2",
   variable: "--font-jakarta",
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: "500 700",
   display: "swap",
 });
 
-const inter = Inter({
+const inter = localFont({
+  src: "./fonts/inter-latin.woff2",
   variable: "--font-inter",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: "400 600",
   display: "swap",
 });
 
-const jetbrains = JetBrains_Mono({
+const jetbrains = localFont({
+  src: "./fonts/jetbrains-mono-latin.woff2",
   variable: "--font-jetbrains",
-  subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: "400 500",
   display: "swap",
 });
 
