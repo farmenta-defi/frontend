@@ -6,6 +6,7 @@ import { buttonClasses } from "@/components/ui/button";
 import { fmtUsd, type CollateralPool } from "@/lib/markets";
 import { describePosition } from "@/lib/onchain/describe";
 import { inPool } from "@/lib/onchain/discovery";
+import { listState, unreadNote, type ListStatus } from "@/lib/onchain/list-status";
 import { usePositions, useSession, useWalletPositions } from "@/lib/onchain/hooks";
 import type { PositionState } from "@/lib/onchain/reads";
 import { usdgToNumber } from "@/lib/units";
@@ -22,8 +23,9 @@ import { cn } from "@/lib/utils";
  */
 export type PositionList = {
   positions: readonly PositionState[];
-  /** `failed`: the logs could not be read, which is not the wallet having no positions. */
-  status: "idle" | "loading" | "failed" | "ready";
+  status: ListStatus;
+  /** Positions of this pool that were found and could not be read. */
+  unread: number;
   retry: () => void;
 };
 
@@ -42,13 +44,15 @@ export function usePoolPositions(pool: CollateralPool): PositionList {
       (position): position is PositionState =>
         position !== undefined && (position.place === "wallet" || position.place === "collateral"),
     );
-  // The first read only. While the list is read again, or a position that has just arrived is
-  // being read, what is on screen stays on screen.
-  const reading = discovery.isLoading || (positions.length === 0 && details.some((query) => query.isLoading));
-
   return {
     positions,
-    status: discovery.isError ? "failed" : reading ? "loading" : discovery.data ? "ready" : "idle",
+    ...listState({
+      discovery: { isLoading: discovery.isLoading, isError: discovery.isError, hasData: discovery.data !== undefined },
+      found: found.length,
+      shown: positions.length,
+      reading: details.filter((query) => query.isLoading).length,
+      failed: details.filter((query) => query.isError && query.data === undefined).length,
+    }),
     retry: () => void discovery.refetch(),
   };
 }
@@ -95,6 +99,7 @@ export function PositionPicker({
   if (list.status === "idle") {
     return <p className={note}>{session.account ? "" : `Connect a wallet to see its ${pool.pair} positions.`}</p>;
   }
+  if (list.positions.length === 0 && list.unread > 0) return <p className={cn(note, "text-warn")}>{unreadNote(list.unread)}</p>;
   if (list.positions.length === 0) {
     return (
       <p className={note}>
@@ -141,6 +146,7 @@ export function PositionPicker({
           </button>
         );
       })}
+      {list.unread > 0 && <p className="px-1 pt-1 text-[11px] leading-[17px] text-warn">{unreadNote(list.unread)}</p>}
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { COLLATERAL_POOLS, fmtUsd, fmtUsdg, MARKETS, poolHref } from "@/lib/mark
 import { repay, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
 import { samePool } from "@/lib/onchain/contracts";
 import { describePosition } from "@/lib/onchain/describe";
+import { listState, unreadNote } from "@/lib/onchain/list-status";
 import { repayGate, withdrawCollateralGate, withdrawGate, type Gate } from "@/lib/onchain/gates";
 import { useAction, useLenderState, usePositions, useSession, useWalletPositions } from "@/lib/onchain/hooks";
 import type { PositionState } from "@/lib/onchain/reads";
@@ -342,14 +343,24 @@ export function BorrowPositions({ empty }: { empty: ReactNode }) {
 
   const blueChip = found.filter((position) => tierOf(position) === "blue-chip");
   const meme = found.filter((position) => tierOf(position) === "meme");
-  const rows = [
+  const reads = [
     ...usePositions("blue-chip", blueChip.map((position) => position.tokenId)).map(
-      (query) => ["blue-chip", query.data] as const,
+      (query) => ["blue-chip", query] as const,
     ),
-    ...usePositions("meme", meme.map((position) => position.tokenId)).map((query) => ["meme", query.data] as const),
-  ].filter((row): row is readonly [MarketTier, PositionState] => row[1] !== undefined);
+    ...usePositions("meme", meme.map((position) => position.tokenId)).map((query) => ["meme", query] as const),
+  ];
+  const rows = reads
+    .map(([tier, query]) => [tier, query.data] as const)
+    .filter((row): row is readonly [MarketTier, PositionState] => row[1] !== undefined);
+  const { status, unread } = listState({
+    discovery: { isLoading: discovery.isLoading, isError: discovery.isError, hasData: discovery.data !== undefined },
+    found: found.length,
+    shown: rows.length,
+    reading: reads.filter(([, query]) => query.isLoading).length,
+    failed: reads.filter(([, query]) => query.isError && query.data === undefined).length,
+  });
 
-  if (discovery.isError) {
+  if (status === "failed") {
     return (
       <div className="flex flex-col items-center gap-4 rounded-[var(--radius-xl)] border border-border/70 px-5 py-9 text-center">
         <p className="text-[13px] text-warn">Couldn&apos;t load your positions. The network did not respond.</p>
@@ -363,10 +374,8 @@ export function BorrowPositions({ empty }: { empty: ReactNode }) {
       </div>
     );
   }
-  // The first read only; a list that is being read again stays on screen.
-  if (discovery.isLoading || (rows.length === 0 && found.length > 0)) {
-    return <p className="px-1 py-6 text-[13px] text-steel-500">Looking for your positions…</p>;
-  }
+  if (status === "loading") return <p className="px-1 py-6 text-[13px] text-steel-500">Looking for your positions…</p>;
+  if (rows.length === 0 && unread > 0) return <p className="px-1 py-6 text-[13px] text-warn">{unreadNote(unread)}</p>;
   if (rows.length === 0) return <>{empty}</>;
 
   return (
@@ -378,6 +387,7 @@ export function BorrowPositions({ empty }: { empty: ReactNode }) {
           <WalletPosition key={position.tokenId.toString()} position={position} />
         ) : null,
       )}
+      {unread > 0 && <p className="px-1 text-[12px] leading-[18px] text-warn">{unreadNote(unread)}</p>}
     </div>
   );
 }
