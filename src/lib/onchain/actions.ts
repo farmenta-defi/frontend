@@ -33,6 +33,16 @@ export type Step = {
 
 export type Progress = (step: Step) => void;
 
+/**
+ * The gas limit a transaction is sent with: the estimate and a quarter more.
+ * The estimate is taken at one block and the transaction runs in a later one,
+ * where the market accrues interest first: it writes the index and the
+ * reserves, which the estimate did not pay for when no time had passed. Sent
+ * with the bare estimate, such a transaction is mined and runs out of gas.
+ * Gas that is not used is not charged.
+ */
+const withMargin = (estimate: bigint) => (estimate * 125n) / 100n;
+
 type Call = { address: Address; abi: Abi; functionName: string; args: readonly unknown[] };
 
 async function send(clients: Clients, name: Step["name"], call: Call, onStep?: Progress) {
@@ -40,9 +50,15 @@ async function send(clients: Clients, name: Step["name"], call: Call, onStep?: P
   try {
     await requireChain(clients);
     const { request } = await publicClient.simulateContract({ ...call, account: walletClient.account, chain });
+    const estimate = await publicClient.estimateContractGas({ ...call, account: walletClient.account });
 
     onStep?.({ name, phase: "sign" });
-    const hash = await walletClient.writeContract({ ...request, account: walletClient.account, chain });
+    const hash = await walletClient.writeContract({
+      ...request,
+      account: walletClient.account,
+      chain,
+      gas: withMargin(estimate),
+    });
 
     onStep?.({ name, phase: "confirm", hash });
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
