@@ -1,10 +1,12 @@
 /**
- * Market + LP-position domain model with mock data. The market UI reads only
- * from these exports, so swapping to live wagmi/indexer reads later is a
- * data-layer change; the components stay untouched.
+ * Market and pool domain model with mock data. The market UI reads only from
+ * these exports, so swapping to the backend later is a data-layer change
+ * (FAR-71); the components stay untouched.
  *
  * Risk parameters come from ./risk-params (single source, spec §6.2);
  * only the market activity numbers (APY, utilization, TVL) are mock here.
+ * Nothing about a wallet is: balances, positions and loans are read from the
+ * chain (./onchain).
  */
 
 import { RISK_PARAMS, type MarketTier } from "./risk-params";
@@ -24,21 +26,6 @@ export type Market = {
   liquidatorBonus: number; // 0..1, from RISK_PARAMS
   reserveFactor: number; // %, from RISK_PARAMS
   oracle: "CHAINLINK" | "TWAP"; // from RISK_PARAMS
-};
-
-export type LpPosition = {
-  tokenId: number;
-  pair: string;
-  range: string;
-  valueUsd: number;
-  marketId: MarketTier;
-  inRange: boolean;
-  uncollectedFeesUsd: number;
-  composition: string; // human-readable token breakdown of the position
-  collateralUsd: number;
-  borrowedUsd: number;
-  healthFactor: number;
-  status: "healthy" | "warning" | "critical" | "liquidatable";
 };
 
 const bc = RISK_PARAMS["blue-chip"];
@@ -89,7 +76,12 @@ export const NETWORKS: Record<NetworkId, { name: string; chainId: number }> = {
  * lenders share (spec §1 no. 8 — two isolated markets, many pools inside each).
  */
 export type CollateralPool = {
-  /** Uniswap v4 poolId, keccak256 of the PoolKey. Mock until the pools are listed. */
+  /**
+   * Uniswap v4 poolId, keccak256 of the PoolKey. ETH/USDG and WETH/USDG carry
+   * the ids of real pools (docs ARCHITECTURE.md §18: no hook, fee 460 and fee
+   * 200), the two `pnpm fork` lists, so their pages act on real positions. The
+   * rest are placeholders. Which pools are listed comes from the backend (FAR-71).
+   */
   poolId: `0x${string}`;
   /** Lowercased pair, the last URL segment. Readable half of the address. */
   slug: string;
@@ -108,7 +100,7 @@ export type CollateralPool = {
 
 export const COLLATERAL_POOLS: CollateralPool[] = [
   {
-    poolId: "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836",
+    poolId: "0x54f7883914619af9105355bf83ed678bcf9f63560218ac61c9963b9503d0ba32",
     slug: "eth-usdg",
     network: "robinhood",
     tier: "blue-chip",
@@ -121,7 +113,7 @@ export const COLLATERAL_POOLS: CollateralPool[] = [
     marketSizeUsd: 1_240_000,
   },
   {
-    poolId: "0x4f2b6d0a8c1e35947ab30fd2c6e8194a7d5b0c93e21f4867a0dc5b93e1470a52",
+    poolId: "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
     slug: "weth-usdg",
     network: "robinhood",
     tier: "blue-chip",
@@ -230,54 +222,6 @@ export const findPool = (network: string, tier: string, poolId: string, slug: st
       pool.slug === slug &&
       pool.poolId.toLowerCase() === poolId.toLowerCase(),
   ) ?? null;
-
-/** Placeholder wallet data until the indexer + contracts are live. */
-export const MOCK_POSITIONS: LpPosition[] = [
-  {
-    tokenId: 123,
-    pair: "ETH/USDG",
-    range: "±22%",
-    valueUsd: 2_400,
-    marketId: "blue-chip",
-    inRange: true,
-    uncollectedFeesUsd: 12.4,
-    composition: "0.41 ETH + 1,205 USDG",
-    collateralUsd: 2_400,
-    borrowedUsd: 0,
-    healthFactor: Infinity,
-    status: "healthy",
-  },
-  {
-    tokenId: 98,
-    pair: "WETH/USDG",
-    range: "±25%",
-    valueUsd: 5_150,
-    marketId: "blue-chip",
-    inRange: true,
-    uncollectedFeesUsd: 31.75,
-    composition: "0.88 WETH + 2,590 USDG",
-    collateralUsd: 5_150,
-    borrowedUsd: 2_850,
-    healthFactor: 1.35,
-    status: "warning",
-  },
-  {
-    tokenId: 45,
-    pair: "PONS/USDG",
-    range: "±20%",
-    valueUsd: 860,
-    marketId: "meme",
-    inRange: false,
-    uncollectedFeesUsd: 3.1,
-    composition: "42,800,000 PONS + 0 USDG",
-    collateralUsd: 860,
-    borrowedUsd: 620,
-    healthFactor: 0.55,
-    status: "liquidatable",
-  },
-];
-
-export const MOCK_USDG_BALANCE = 5_000;
 
 export const fmtUsd = (n: number) =>
   `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
