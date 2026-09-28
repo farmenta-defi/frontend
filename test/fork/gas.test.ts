@@ -1,7 +1,16 @@
 import { erc20Abi, maxUint256, type Abi, type Address } from "viem";
 import { describe, expect, it } from "vitest";
 
-import { ACCRUAL_GAS, borrow, depositCollateral, gasLimitFor, supply } from "@/lib/onchain/actions";
+import {
+  ACCRUAL_GAS,
+  borrow,
+  depositCollateral,
+  gasLimitFor,
+  repay,
+  supply,
+  withdraw,
+  withdrawCollateral,
+} from "@/lib/onchain/actions";
 import { marketAbi } from "@/lib/onchain/contracts";
 import { signCollateralPermit } from "@/lib/onchain/permit";
 import type { Clients } from "@/lib/onchain/reads";
@@ -81,6 +90,39 @@ async function sentAfterAnAccrual({ walletClient }: Clients, call: Call, limitFo
   return { estimate, used: receipt.gasUsed, status: receipt.status };
 }
 
+/**
+ * The same situation around one of the app's own actions: the clients it is
+ * given estimate at the block of the accrual mined just before, and mine what
+ * they send an hour later. Records the estimate the action got and the gas
+ * limit it sent with.
+ */
+async function inTheSecondOfAnAccrual({ publicClient: reads, walletClient }: Clients) {
+  const accrued = await reads.waitForTransactionReceipt({
+    hash: await walletClient.writeContract({ address: market, abi: marketAbi, functionName: "accrue" }),
+  });
+  const { timestamp } = await reads.getBlock({ blockNumber: accrued.blockNumber });
+  const seen: { estimate?: bigint; gas?: bigint } = {};
+
+  const clients = {
+    publicClient: {
+      ...reads,
+      estimateContractGas: async (args: Parameters<typeof reads.estimateContractGas>[0]) => {
+        seen.estimate = await reads.estimateContractGas({ ...args, blockNumber: accrued.blockNumber } as never);
+        return seen.estimate;
+      },
+    },
+    walletClient: {
+      ...walletClient,
+      writeContract: async (args: Parameters<typeof walletClient.writeContract>[0]) => {
+        seen.gas = (args as { gas?: bigint }).gas;
+        await anvil.setNextBlockTimestamp({ timestamp: timestamp + HOUR });
+        return walletClient.writeContract(args);
+      },
+    },
+  } as unknown as Clients;
+  return { clients, seen };
+}
+
 const call = (functionName: string, args: readonly unknown[]): Call => ({
   address: market,
   abi: marketAbi as Abi,
@@ -109,6 +151,29 @@ describe("the gas limit, when the estimate was taken in the second of an accrual
         expect(used, `${name} did not accrue`).toBeGreaterThan(estimate);
         // ...by less than the allowance made for it.
         expect(used - estimate, `${name}: the accrual cost more than ACCRUAL_GAS`).toBeLessThan(ACCRUAL_GAS);
+      }
+    });
+
+    it("the app's own actions send with that limit, and are mined", async () => {
+      const { lender, borrower } = await marketWithALoan();
+      const actions: [string, Clients, (clients: Clients) => Promise<{ status: string; gasUsed: bigint }>][] = [
+        ["supply", lender.clients, (clients) => supply(clients, blueChip, 200n * USDG)],
+        ["withdraw", lender.clients, (clients) => withdraw(clients, blueChip, 200n * USDG)],
+        ["borrow", borrower.clients, (clients) => borrow(clients, blueChip, LOAN, 50n * USDG)],
+        // Before the repayment: with no loan left in the market an accrual has nothing to write.
+        ["withdrawCollateral", borrower.clients, (clients) => withdrawCollateral(clients, blueChip, SPARE)],
+        ["repay", borrower.clients, (clients) => repay(clients, blueChip, LOAN, "max")],
+      ];
+
+      for (const [name, real, action] of actions) {
+        const { clients, seen } = await inTheSecondOfAnAccrual(real);
+
+        const receipt = await action(clients);
+
+        expect(receipt.status, `${name} ran out of gas`).toBe("success");
+        expect(seen.estimate, `${name} was not estimated`).toBeGreaterThan(0n);
+        expect(seen.gas, `${name} was not sent with the limit`).toBe(gasLimitFor(seen.estimate!));
+        expect(receipt.gasUsed, `${name} did not accrue`).toBeGreaterThan(seen.estimate!);
       }
     });
 
