@@ -40,6 +40,7 @@ const TARGETS = {
       "totalAssets",
       "withdraw",
       // borrower
+      "accrue",
       "borrow",
       "debtOf",
       "depositCollateralWithPermit",
