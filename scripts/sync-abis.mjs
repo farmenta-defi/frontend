@@ -76,7 +76,7 @@ const TARGETS = {
       "IERC721Permit_v4.sol/IERC721Permit_v4.json",
       "IUnorderedNonce.sol/IUnorderedNonce.json",
     ],
-    functions: ["DOMAIN_SEPARATOR", "getApproved", "getPoolAndPositionInfo", "nonces", "ownerOf"],
+    functions: ["DOMAIN_SEPARATOR", "getApproved", "getPoolAndPositionInfo", "getPositionLiquidity", "nonces", "ownerOf"],
     // Which positions a wallet received: `to` is indexed.
     events: ["Transfer"],
   },

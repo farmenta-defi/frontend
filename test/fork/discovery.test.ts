@@ -3,12 +3,28 @@ import { robinhood } from "viem/chains";
 import { describe, expect, it } from "vitest";
 
 import { borrow, depositCollateral, supply, withdrawCollateral } from "@/lib/onchain/actions";
-import { discoverPositions, inPool, POSITION_MANAGER_START_BLOCK } from "@/lib/onchain/discovery";
+import {
+  discoverPositions,
+  inPool,
+  POSITION_MANAGER_START_BLOCK,
+  type Discovered,
+} from "@/lib/onchain/discovery";
 import { feeLabel } from "@/lib/onchain/range";
 import { readPosition, type ReadClient } from "@/lib/onchain/reads";
 
 import { ETH_USDG, FORK_BLOCK, POSITIONS, WETH_USDG } from "./support/constants";
-import { blueChip, dealUsdg, givePosition, isolateEachTest, meme, newUser, publicClient } from "./support/fork";
+import {
+  blueChip,
+  dealUsdg,
+  emptyPosition,
+  givePosition,
+  isolateEachTest,
+  liquidityOf,
+  meme,
+  newUser,
+  ownerOf,
+  publicClient,
+} from "./support/fork";
 
 /**
  * How a position gets onto the screen: found in the chain's logs, with no
@@ -23,6 +39,8 @@ const clients = { logs: publicClient, reads: publicClient };
 const find = (account: `0x${string}`) => discoverPositions(clients, markets, account, FORK_BLOCK);
 
 const USDG = 1_000_000n;
+const idsOf = (positions: readonly Discovered[]) => positions.map((position) => position.tokenId);
+
 
 describe("finding a wallet's positions", () => {
   isolateEachTest();
@@ -107,6 +125,23 @@ describe("finding a wallet's positions", () => {
       expect((await find(other.address)).map((position) => position.tokenId)).toEqual([POSITIONS.ethUsdgInRange]);
     });
 
+    it("a position emptied through PositionManager is left out; the one with liquidity is listed", async () => {
+      const user = await newUser("holder");
+      await givePosition(user.address, POSITIONS.ethUsdgInRange);
+      await givePosition(user.address, POSITIONS.ethUsdgAboveRange);
+      expect(idsOf(await find(user.address)).sort()).toEqual([POSITIONS.ethUsdgInRange, POSITIONS.ethUsdgAboveRange].sort());
+
+      await emptyPosition(user.clients, POSITIONS.ethUsdgInRange);
+
+      // Still the wallet's NFT, holding nothing.
+      expect(await ownerOf(POSITIONS.ethUsdgInRange)).toBe(user.address);
+      expect(await liquidityOf(POSITIONS.ethUsdgInRange)).toBe(0n);
+      const found = await find(user.address);
+      expect(idsOf(found)).toEqual([POSITIONS.ethUsdgAboveRange]);
+      expect(found[0].liquidity).toBeGreaterThan(0n);
+      expect(idsOf(inPool(found, ETH_USDG.id))).toEqual([POSITIONS.ethUsdgAboveRange]);
+    });
+
     it("a wallet whose positions are all in other pools gets the empty state on this pool's page", async () => {
       const user = await newUser("holder");
       await givePosition(user.address, POSITIONS.unlistedPool);
@@ -164,6 +199,31 @@ describe("finding a wallet's positions", () => {
       expect(await find(user.address)).toMatchObject([
         { tokenId: POSITIONS.ethUsdgInRange, place: "collateral", tier: "blue-chip" },
       ]);
+    });
+
+    it("lists the newest position first, which is the row the panel selects", async () => {
+      const user = await newUser("holder");
+      // Given oldest id last, so the order of arrival is not the order of the list.
+      await givePosition(user.address, POSITIONS.ethUsdgInRange);
+      await givePosition(user.address, POSITIONS.wethUsdgInRange);
+      await givePosition(user.address, POSITIONS.ethUsdgAboveRange);
+
+      expect(idsOf(await find(user.address))).toEqual([
+        POSITIONS.ethUsdgInRange, // 1,768,881
+        POSITIONS.ethUsdgAboveRange, // 1,621,020
+        POSITIONS.wethUsdgInRange, // 999,597
+      ]);
+    });
+
+    it("keeps collateral that holds no liquidity in the list: its way out is still there", async () => {
+      const user = await newUser("holder");
+      await givePosition(user.address, POSITIONS.ethUsdgInRange);
+      await depositCollateral(user.clients, blueChip, POSITIONS.ethUsdgInRange);
+      const found = await find(user.address);
+
+      // The rule is on the place, not on the liquidity: the filter must not reach collateral.
+      expect(found).toMatchObject([{ tokenId: POSITIONS.ethUsdgInRange, place: "collateral" }]);
+      expect(found[0].liquidity).toBe(await liquidityOf(POSITIONS.ethUsdgInRange));
     });
 
     it("reads PositionManager's logs from its deployment block unless told otherwise", () => {

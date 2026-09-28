@@ -16,6 +16,11 @@ import type { MarketRefs, ReadClient } from "./reads";
  * passed on or taken back drops out when each id is read: `ownerOf` says who
  * holds it now, and `loanOf` whose collateral it is.
  *
+ * A position whose liquidity was removed stays in the wallet as an NFT until
+ * it is burned, and most never are. It is left out: it is worth nothing and
+ * the market refuses it (`PositionIsEmpty`). A position the market holds is
+ * listed whatever it holds, because its loan and its way out are still there.
+ *
  * A user never types a token id (decided by the product owner, review of
  * PR #1). When the backend's list is there (FAR-71) it comes first, and this is
  * what is left when the backend is down.
@@ -34,6 +39,8 @@ export type Discovered = {
   poolId: Hex;
   tickLower: number;
   tickUpper: number;
+  /** Never zero for a position in the wallet: those are left out. */
+  liquidity: bigint;
 };
 
 export type DiscoveryClients = {
@@ -93,7 +100,7 @@ export async function discoverPositions(
   // One state, one block. A burned position fails `ownerOf`, so failures are allowed and dropped.
   const tokenIds = [...ids];
   const blockNumber = await reads.getBlockNumber({ cacheTime: 0 });
-  const perToken = 2 + tiers.length;
+  const perToken = 3 + tiers.length;
   const results = await reads.multicall({
     blockNumber,
     allowFailure: true,
@@ -101,6 +108,7 @@ export async function discoverPositions(
     contracts: tokenIds.flatMap((tokenId) => [
       { address: positionManager, abi: positionsAbi, functionName: "ownerOf", args: [tokenId] } as const,
       { address: positionManager, abi: positionsAbi, functionName: "getPoolAndPositionInfo", args: [tokenId] } as const,
+      { address: positionManager, abi: positionsAbi, functionName: "getPositionLiquidity", args: [tokenId] } as const,
       ...tiers.map(
         (tier) => ({ address: markets[tier].market, abi: marketAbi, functionName: "loanOf", args: [tokenId] }) as const,
       ),
@@ -109,15 +117,19 @@ export async function discoverPositions(
 
   const found: Discovered[] = [];
   tokenIds.forEach((tokenId, index) => {
-    const [owner, info, ...loans] = results.slice(index * perToken, (index + 1) * perToken);
-    if (owner.status !== "success" || info.status !== "success") return;
+    const [owner, info, held, ...loans] = results.slice(index * perToken, (index + 1) * perToken);
+    if (owner.status !== "success" || info.status !== "success" || held.status !== "success") return;
 
     const holder = owner.result as Address;
     const [key, packed] = info.result as readonly [PoolKey, bigint];
     const poolKey: PoolKey = { ...key };
-    const position = { tokenId, poolKey, poolId: poolIdOf(poolKey), ...ticksOf(packed) };
+    const liquidity = held.result as bigint;
+    const position = { tokenId, poolKey, poolId: poolIdOf(poolKey), ...ticksOf(packed), liquidity };
 
-    if (same(holder, account)) return found.push({ ...position, place: "wallet", tier: null });
+    if (same(holder, account)) {
+      if (liquidity > 0n) found.push({ ...position, place: "wallet", tier: null });
+      return;
+    }
     tiers.forEach((tier, at) => {
       const loan = loans[at];
       if (loan.status !== "success" || !same(holder, markets[tier].market)) return;

@@ -1,6 +1,7 @@
 import {
   createTestClient,
   createWalletClient,
+  encodeAbiParameters,
   erc20Abi,
   http,
   parseAbi,
@@ -39,6 +40,9 @@ export const publicClient = anvil as unknown as ReadClient;
 const nft = parseAbi([
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function transferFrom(address from, address to, uint256 tokenId)",
+  "function getPositionLiquidity(uint256 tokenId) view returns (uint128)",
+  "function getPoolAndPositionInfo(uint256 tokenId) view returns ((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) key, uint256 info)",
+  "function modifyLiquidities(bytes unlockData, uint256 deadline) payable",
 ]);
 const ownerActions = parseAbi([
   "function pause()",
@@ -117,6 +121,45 @@ export async function givePosition(to: Address, tokenId: bigint) {
       }),
     );
   });
+}
+
+export const liquidityOf = (tokenId: bigint) =>
+  publicClient.readContract({ address: POSITION_MANAGER, abi: nft, functionName: "getPositionLiquidity", args: [tokenId] });
+
+/**
+ * Removes all of a position's liquidity through PositionManager, the way its
+ * owner does on Uniswap: `DECREASE_LIQUIDITY` then `TAKE_PAIR`. The NFT stays
+ * in the wallet, holding nothing.
+ */
+export async function emptyPosition({ walletClient }: Clients, tokenId: bigint) {
+  const owner = walletClient.account.address;
+  const [[key], liquidity, block] = await Promise.all([
+    publicClient.readContract({ address: POSITION_MANAGER, abi: nft, functionName: "getPoolAndPositionInfo", args: [tokenId] }),
+    liquidityOf(tokenId),
+    publicClient.getBlock(),
+  ]);
+  const DECREASE_LIQUIDITY = "01";
+  const TAKE_PAIR = "11";
+  const decrease = encodeAbiParameters(
+    [{ type: "uint256" }, { type: "uint256" }, { type: "uint128" }, { type: "uint128" }, { type: "bytes" }],
+    [tokenId, BigInt(liquidity), 0n, 0n, "0x"],
+  );
+  const take = encodeAbiParameters(
+    [{ type: "address" }, { type: "address" }, { type: "address" }],
+    [key.currency0, key.currency1, owner],
+  );
+  const unlockData = encodeAbiParameters(
+    [{ type: "bytes" }, { type: "bytes[]" }],
+    [`0x${DECREASE_LIQUIDITY}${TAKE_PAIR}`, [decrease, take]],
+  );
+  await mined(
+    await walletClient.writeContract({
+      address: POSITION_MANAGER,
+      abi: nft,
+      functionName: "modifyLiquidities",
+      args: [unlockData, block.timestamp + 600n],
+    }),
+  );
 }
 
 /** Pauses a market as the guardian, who may do so at once; the owner's pause waits the timelock. */
