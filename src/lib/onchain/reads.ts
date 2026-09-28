@@ -15,8 +15,11 @@ import {
 
 import { chain } from "@/lib/chain";
 
+import { positionValuerAbi } from "@/abis/PositionValuer";
+
 import { lensAbi, marketAbi, policyAbi, poolIdOf, positionsAbi, type PoolKey } from "./contracts";
 import { explainError, type Explained } from "./errors";
+import { isNative, ticksOf } from "./range";
 
 /**
  * The reads a transaction is decided on, taken from the chain through the
@@ -166,12 +169,32 @@ export type LoanRisk = {
   healthFactor: bigint;
 };
 
+/**
+ * What the position holds, as `PositionValuer` values it at the oracle's
+ * prices. Known for a position in the wallet too, which the lens cannot value:
+ * `MarketLens.positionValue` answers zero for a position the market does not hold.
+ */
+export type PositionHoldings = {
+  amount0: bigint;
+  amount1: bigint;
+  /** USD 1e18. */
+  principalUsd: bigint;
+  /** USD 1e18, uncollected fees, uncapped. */
+  feesUsd: bigint;
+};
+
 export type PositionState = {
   tokenId: bigint;
   place: PositionPlace;
   /** The pool the position provides liquidity to. Absent when the token is missing. */
   poolId: Hex | null;
   poolKey: PoolKey | null;
+  /** The position's price range, as ticks. Absent when the token is missing. */
+  ticks: { tickLower: number; tickUpper: number } | null;
+  /** Decimals of the pool's two currencies, for turning ticks into prices. */
+  decimals: readonly [number, number] | null;
+  /** Absent when the valuer cannot price the position: a pool whose tokens have no feed, a stale feed. */
+  holdings: PositionHoldings | null;
   pool: { status: PoolStatus; terms: PoolTerms | null };
   paused: boolean;
   /** USDG owed as of now. Zero unless `place` is "collateral". */
@@ -196,8 +219,9 @@ export async function readPosition(
   const market = { address: refs.market, abi: marketAbi, ...at } as const;
   const lens = { address: refs.lens, abi: lensAbi, ...at } as const;
 
-  const [positionManager, asset, paused, loan] = await Promise.all([
+  const [positionManager, valuer, asset, paused, loan] = await Promise.all([
     client.readContract({ ...market, functionName: "positionManager" }),
+    client.readContract({ ...market, functionName: "valuer" }),
     client.readContract({ ...market, functionName: "asset" }),
     client.readContract({ ...market, functionName: "paused" }),
     client.readContract({ ...market, functionName: "loanOf", args: [tokenId] }),
@@ -212,15 +236,38 @@ export async function readPosition(
     client.readContract({ ...token, functionName: "allowance", args: [account, refs.market] }),
   ]);
 
-  const base = { tokenId, paused, asset, balance, allowance, debt: 0n, risk: null, riskError: null } as const;
+  const none = { tokenId, paused, asset, balance, allowance, debt: 0n, risk: null, riskError: null } as const;
   if (!holder || holder === zeroAddress) {
-    return { ...base, place: "missing", poolId: null, poolKey: null, pool: { status: "unlisted", terms: null } };
+    return {
+      ...none,
+      place: "missing",
+      poolId: null,
+      poolKey: null,
+      ticks: null,
+      decimals: null,
+      holdings: null,
+      pool: { status: "unlisted", terms: null },
+    };
   }
 
-  const [key] = await client.readContract({ ...positions, functionName: "getPoolAndPositionInfo", args: [tokenId] });
+  const [key, info] = await client.readContract({ ...positions, functionName: "getPoolAndPositionInfo", args: [tokenId] });
   const poolKey: PoolKey = { ...key };
   const poolId = poolIdOf(poolKey);
-  const pool = await readPool(client, refs.policy, poolId, blockNumber);
+  const decimalsOf = (currency: Address) =>
+    isNative(currency)
+      ? Promise.resolve(18)
+      : client.readContract({ address: currency, abi: erc20Abi, functionName: "decimals", ...at });
+  const [pool, decimals0, decimals1, holdings] = await Promise.all([
+    readPool(client, refs.policy, poolId, blockNumber),
+    decimalsOf(poolKey.currency0),
+    decimalsOf(poolKey.currency1),
+    client
+      .readContract({ address: valuer, abi: [...positionValuerAbi], functionName: "value", args: [tokenId], ...at })
+      .then(({ amount0, amount1, principalUsd, feesUsd }) => ({ amount0, amount1, principalUsd, feesUsd }))
+      // Shown without a value rather than not shown.
+      .catch(() => null),
+  ]);
+  const base = { ...none, ticks: ticksOf(info), decimals: [decimals0, decimals1] as const, holdings };
 
   const same = (a: Address, b: Address) => a.toLowerCase() === b.toLowerCase();
   const place: PositionPlace = same(holder, account)
