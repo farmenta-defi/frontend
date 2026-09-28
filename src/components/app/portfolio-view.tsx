@@ -6,14 +6,19 @@ import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useAccount } from "wagmi";
 
+import { BorrowPositions, SupplyPosition, useDeposit } from "@/components/app/portfolio-positions";
 import { AddressMark } from "@/components/ui/address-mark";
 import { AssetMark, type AssetId } from "@/components/ui/asset-mark";
 import { Badge, Dot } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import { Tabs } from "@/components/ui/tabs";
+import { chain as farmentaChain } from "@/lib/chain";
+import { deployment, NOT_DEPLOYED } from "@/lib/deployment";
 import { MARKETS, NETWORKS } from "@/lib/markets";
 import { shortAddress } from "@/lib/pool-history";
+import type { MarketTier } from "@/lib/risk-params";
+import { usdgToNumber } from "@/lib/units";
 
 /**
  * The account page.
@@ -22,9 +27,10 @@ import { shortAddress } from "@/lib/pool-history";
  * out the same way: one block for each market a wallet can lend into, then the
  * loans it has taken.
  *
- * Every figure is zero and every list is empty, for every wallet, because the
- * FarmentaMarket contracts are not deployed and there is nothing to read. The
- * page says so rather than filling itself with invented positions.
+ * What the wallet holds is read from the chain: its deposit in each market,
+ * and the loans on the positions this browser knows for it. Without a
+ * deployment there is nothing to read, and the page says so rather than
+ * filling itself with invented positions.
  */
 
 const emptySubscribe = () => () => {};
@@ -179,7 +185,7 @@ function AccountHeader() {
           <Copy className="size-4" aria-hidden />
         )}
       </button>
-      {chain ? (
+      {chain?.id === farmentaChain.id ? (
         <Badge tone="ok">
           <Dot tone="ok" />
           Connected
@@ -197,9 +203,16 @@ function AccountHeader() {
   );
 }
 
-function SupplySection({ name, connected }: { name: string; connected: boolean }) {
+function SupplySection({ tier, name, connected }: { tier: MarketTier; name: string; connected: boolean }) {
   const [chain, setChain] = useState("all");
   const id = `supply-${name.toLowerCase().replace(/\s+/g, "-")}`;
+  const deposit = useDeposit(tier);
+  // USDG is read as dollars across the app; the figure is the deposit in USDG.
+  const deposited = (connected && deposit ? usdgToNumber(deposit.deposited) : 0).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const holding = connected && deposit !== null && deposit.deposited > 0n;
 
   return (
     <section aria-labelledby={id}>
@@ -220,7 +233,8 @@ function SupplySection({ name, connected }: { name: string; connected: boolean }
             />
           </div>
           <p className="font-display tnum mt-3 text-[34px] font-semibold leading-none text-foreground sm:text-[40px]">
-            <span className="text-steel-500">$</span>0.00
+            <span className="text-steel-500">$</span>
+            {deposited}
           </p>
         </div>
 
@@ -240,11 +254,15 @@ function SupplySection({ name, connected }: { name: string; connected: boolean }
       </div>
 
       <div className="mt-2">
-        <EmptyList>
-          {connected
-            ? `No active supply positions in the ${name} market.`
-            : "Connect a wallet to see its supply positions."}
-        </EmptyList>
+        {holding ? (
+          <SupplyPosition tier={tier} />
+        ) : (
+          <EmptyList>
+            {connected
+              ? `No active supply positions in the ${name} market.`
+              : "Connect a wallet to see its supply positions."}
+          </EmptyList>
+        )}
       </div>
     </section>
   );
@@ -254,7 +272,7 @@ function Positions({ connected }: { connected: boolean }) {
   return (
     <div className="space-y-12 pt-5">
       {MARKETS.map((market) => (
-        <SupplySection key={market.id} name={market.name} connected={connected} />
+        <SupplySection key={market.id} tier={market.id} name={market.name} connected={connected} />
       ))}
 
       <section aria-labelledby="borrow-positions">
@@ -267,17 +285,17 @@ function Positions({ connected }: { connected: boolean }) {
           <Filter label="Collateral" options={COLLATERAL} align="left" />
         </div>
         <div className="mt-2">
-          <EmptyList>
-            {connected
-              ? "No active borrow positions."
-              : "Connect a wallet to see its borrow positions."}
-          </EmptyList>
+          {connected && deployment ? (
+            <BorrowPositions empty={<EmptyList>No active borrow positions.</EmptyList>} />
+          ) : (
+            <EmptyList>
+              {connected ? "No active borrow positions." : "Connect a wallet to see its borrow positions."}
+            </EmptyList>
+          )}
         </div>
       </section>
 
-      <p className="text-[12px] leading-[18px] text-steel-500">
-        The FarmentaMarket contracts are not deployed yet, so no wallet holds a position.
-      </p>
+      {!deployment && <p className="text-[12px] leading-[18px] text-steel-500">{NOT_DEPLOYED}</p>}
     </div>
   );
 }
