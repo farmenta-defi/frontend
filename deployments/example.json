@@ -1,0 +1,21 @@
+{
+  "chainId": 4663,
+  "owner": "0x00000000000000000000000000000000000000a1",
+  "collateralPolicy": { "address": "0x00000000000000000000000000000000000000c1", "startBlock": 1 },
+  "twapRecorder": { "address": "0x00000000000000000000000000000000000000c2", "startBlock": 1 },
+  "markets": {
+    "blueChip": { "address": "0x00000000000000000000000000000000000000b1", "startBlock": 1 },
+    "meme": { "address": "0x00000000000000000000000000000000000000b2", "startBlock": 1 }
+  },
+  "timelock": { "address": "0x00000000000000000000000000000000000000a2", "startBlock": 1 },
+  "policyAcceptOperation": null,
+  "priceOracle": { "address": "0x00000000000000000000000000000000000000c3", "startBlock": 1 },
+  "positionValuer": { "address": "0x00000000000000000000000000000000000000c4", "startBlock": 1 },
+  "interestRateModel": { "address": "0x00000000000000000000000000000000000000c5", "startBlock": 1 },
+  "marketImplementation": { "address": "0x00000000000000000000000000000000000000c6", "startBlock": 1 },
+  "lenses": {
+    "blueChip": { "address": "0x00000000000000000000000000000000000000d1", "startBlock": 1 },
+    "meme": { "address": "0x00000000000000000000000000000000000000d2", "startBlock": 1 }
+  },
+  "liquidatorHelpers": { "blueChip": null, "meme": null }
+}

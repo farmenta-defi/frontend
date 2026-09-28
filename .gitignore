@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -42,3 +43,6 @@ next-env.d.ts
 
 # smart-contract checkout used by `pnpm abi:sync` and the fork tests
 /.cache/
+
+# written by `pnpm test:fork` from its rehearsal deploy
+/deployments/fork.json
