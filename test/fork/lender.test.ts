@@ -42,7 +42,7 @@ describe("supply", () => {
       const assetsBefore = await totalAssets(market);
       expect(await sharesOf(market, user.address)).toBe(0n);
 
-      const receipt = await supply(user.clients, market, 100n * USDG);
+      const receipt = await supply(user.clients, blueChip, 100n * USDG);
 
       expect(receipt.status).toBe("success");
       expect(await sharesOf(market, user.address)).toBeGreaterThan(0n);
@@ -60,7 +60,7 @@ describe("supply", () => {
       await dealUsdg(user.address, 250n * USDG);
       const steps: string[] = [];
 
-      await supply(user.clients, market, 100n * USDG, (step) => steps.push(`${step.name}:${step.phase}`));
+      await supply(user.clients, blueChip, 100n * USDG, (step) => steps.push(`${step.name}:${step.phase}`));
 
       expect(steps).toEqual(["approve:sign", "approve:confirm", "supply:sign", "supply:confirm"]);
       // The deposit spent all of it: no allowance is left standing.
@@ -78,16 +78,19 @@ describe("supply", () => {
       expect(supplyGate(state, 40n * USDG + 1n)).toMatchObject({ ok: false, code: "InsufficientBalance" });
     });
 
-    it("a supply the wallet cannot pay for is refused in simulation and no deposit is sent", async () => {
+    it("a supply the wallet cannot pay for sends nothing, not even the approval", async () => {
       const user = await newUser("lender");
       await dealUsdg(user.address, 40n * USDG);
       const assetsBefore = await totalAssets(market);
+      const nonce = await nonceOf(user.address);
 
-      await refusal(supply(user.clients, market, 100n * USDG));
+      const refused = await refusal(supply(user.clients, blueChip, 100n * USDG));
 
+      expect(refused.code).toBe("InsufficientBalance");
+      expect(await nonceOf(user.address), "a transaction was sent").toBe(nonce);
+      expect(await usdgAllowance(user.address, market)).toBe(0n);
       expect(await sharesOf(market, user.address)).toBe(0n);
       expect(await totalAssets(market)).toBe(assetsBefore);
-      expect(await usdgBalance(user.address)).toBe(40n * USDG);
     });
   });
 
@@ -98,7 +101,7 @@ describe("supply", () => {
       await approveUsdg(user.clients, market, 120n * USDG);
       const steps: string[] = [];
 
-      await supply(user.clients, market, 100n * USDG, (step) => steps.push(step.name));
+      await supply(user.clients, blueChip, 100n * USDG, (step) => steps.push(step.name));
 
       expect(steps).toEqual(["supply", "supply"]);
       expect(await usdgAllowance(user.address, market)).toBe(20n * USDG);
@@ -107,10 +110,10 @@ describe("supply", () => {
     it("approves again for a second supply, because the first left no allowance behind", async () => {
       const user = await newUser("lender");
       await dealUsdg(user.address, 250n * USDG);
-      await supply(user.clients, market, 100n * USDG);
+      await supply(user.clients, blueChip, 100n * USDG);
       const steps: string[] = [];
 
-      await supply(user.clients, market, 50n * USDG, (step) => steps.push(step.name));
+      await supply(user.clients, blueChip, 50n * USDG, (step) => steps.push(step.name));
 
       expect(steps).toEqual(["approve", "approve", "supply", "supply"]);
       expect((await readLenderState(publicClient, market, user.address)).allowance).toBe(0n);
@@ -133,10 +136,10 @@ describe("withdraw", () => {
     it("returns the USDG and burns the shares", async () => {
       const user = await newUser("lender");
       await dealUsdg(user.address, 100n * USDG);
-      await supply(user.clients, market, 100n * USDG);
+      await supply(user.clients, blueChip, 100n * USDG);
       const { maxWithdraw } = await readLenderState(publicClient, market, user.address);
 
-      await withdraw(user.clients, market, maxWithdraw);
+      await withdraw(user.clients, blueChip, maxWithdraw);
 
       expect(await usdgBalance(user.address)).toBe(maxWithdraw);
       expect((await readLenderState(publicClient, market, user.address)).maxWithdraw).toBe(0n);
@@ -147,7 +150,7 @@ describe("withdraw", () => {
     it("the gate refuses above maxWithdraw and names the limit read from chain", async () => {
       const user = await newUser("lender");
       await dealUsdg(user.address, 100n * USDG);
-      await supply(user.clients, market, 100n * USDG);
+      await supply(user.clients, blueChip, 100n * USDG);
       const state = await readLenderState(publicClient, market, user.address);
       const nonce = await nonceOf(user.address);
 
@@ -164,11 +167,11 @@ describe("withdraw", () => {
     it("a withdrawal above maxWithdraw is refused in simulation with the contract's own error", async () => {
       const user = await newUser("lender");
       await dealUsdg(user.address, 100n * USDG);
-      await supply(user.clients, market, 100n * USDG);
+      await supply(user.clients, blueChip, 100n * USDG);
       const { maxWithdraw } = await readLenderState(publicClient, market, user.address);
       const nonce = await nonceOf(user.address);
 
-      const refused = await refusal(withdraw(user.clients, market, maxWithdraw + 1n));
+      const refused = await refusal(withdraw(user.clients, blueChip, maxWithdraw + 1n));
 
       expect(refused.code).toBe("ERC4626ExceededMaxWithdraw");
       expect(await nonceOf(user.address), "a transaction was sent").toBe(nonce);
@@ -182,7 +185,7 @@ describe("withdraw", () => {
 
       expect(state.maxWithdraw).toBe(0n);
       expect(withdrawGate(state, 1n)).toMatchObject({ ok: false, code: "ERC4626ExceededMaxWithdraw" });
-      expect((await refusal(withdraw(user.clients, market, 1n))).code).toBe("ERC4626ExceededMaxWithdraw");
+      expect((await refusal(withdraw(user.clients, blueChip, 1n))).code).toBe("ERC4626ExceededMaxWithdraw");
     });
   });
 });

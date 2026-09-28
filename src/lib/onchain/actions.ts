@@ -4,8 +4,9 @@ import { chain } from "@/lib/chain";
 
 import { marketAbi } from "./contracts";
 import { ActionError, toActionError } from "./errors";
+import { repayGate, supplyGate, type Gate } from "./gates";
 import { signCollateralPermit } from "./permit";
-import { readCurrentDebt, type Clients } from "./reads";
+import { readLenderState, readPosition, type Clients, type MarketRefs } from "./reads";
 
 /**
  * The six transactions a user sends (FAR-72): supply and withdraw USDG,
@@ -16,7 +17,10 @@ import { readCurrentDebt, type Clients } from "./reads";
  * Every read and write is pinned to chain 4663: a wallet on another network
  * is refused by viem before the request reaches it.
  *
- * Approvals are for the amount being moved, never unlimited.
+ * Approvals are for the amount being moved, never unlimited. An action that
+ * starts with an approval runs its gate first, on state read for it: the
+ * action behind an approval cannot be simulated until the approval is mined,
+ * and an approval for a deposit that will be refused is gas for nothing.
  */
 export type Step = {
   /** Which transaction of the action this is. */
@@ -48,6 +52,10 @@ async function send({ publicClient, walletClient }: Clients, name: Step["name"],
   }
 }
 
+function pass(gate: Gate) {
+  if (!gate.ok) throw new ActionError(gate);
+}
+
 /**
  * Approves `spender` for `amount` of `token` unless the wallet already has.
  * The approval is for this amount, not for `type(uint256).max`.
@@ -64,14 +72,13 @@ async function approve(clients: Clients, token: Address, spender: Address, amoun
   await send(clients, "approve", { address: token, abi: erc20Abi, functionName: "approve", args: [spender, amount] }, onStep);
 }
 
-const assetOf = ({ publicClient }: Clients, market: Address) =>
-  publicClient.readContract({ address: market, abi: marketAbi, functionName: "asset" });
-
 /** Lender: approve USDG, then `deposit(assets, receiver)`. The shares go to the sender. */
-export async function supply(clients: Clients, market: Address, assets: bigint, onStep?: Progress) {
+export async function supply(clients: Clients, { market }: MarketRefs, assets: bigint, onStep?: Progress) {
   const account = clients.walletClient.account.address;
   try {
-    await approve(clients, await assetOf(clients, market), market, assets, onStep);
+    const state = await readLenderState(clients.publicClient, market, account);
+    pass(supplyGate(state, assets));
+    await approve(clients, state.asset, market, assets, onStep);
   } catch (error) {
     throw toActionError(error);
   }
@@ -79,7 +86,7 @@ export async function supply(clients: Clients, market: Address, assets: bigint, 
 }
 
 /** Lender: `withdraw(assets, receiver, owner)`, both the sender. The contract caps it at `maxWithdraw`. */
-export function withdraw(clients: Clients, market: Address, assets: bigint, onStep?: Progress) {
+export function withdraw(clients: Clients, { market }: MarketRefs, assets: bigint, onStep?: Progress) {
   const account = clients.walletClient.account.address;
   return send(
     clients,
@@ -94,7 +101,7 @@ export function withdraw(clients: Clients, market: Address, assets: bigint, onSt
  * spender, then `depositCollateralWithPermit`. One transaction; no separate
  * approval is sent.
  */
-export async function depositCollateral(clients: Clients, market: Address, tokenId: bigint, onStep?: Progress) {
+export async function depositCollateral(clients: Clients, { market }: MarketRefs, tokenId: bigint, onStep?: Progress) {
   let permit;
   try {
     onStep?.({ name: "permit", phase: "sign" });
@@ -116,7 +123,7 @@ export async function depositCollateral(clients: Clients, market: Address, token
 }
 
 /** Borrower: `borrow(tokenId, amount, to)`, paid to the sender. */
-export function borrow(clients: Clients, market: Address, tokenId: bigint, amount: bigint, onStep?: Progress) {
+export function borrow(clients: Clients, { market }: MarketRefs, tokenId: bigint, amount: bigint, onStep?: Progress) {
   const account = clients.walletClient.account.address;
   return send(
     clients,
@@ -140,15 +147,17 @@ export const repayAllowance = (debt: bigint) => debt + debt / 1000n + 1n;
  * whole debt with `repay(tokenId, type(uint256).max)`, so no dust is left by
  * interest accruing between the read and the transaction.
  */
-export async function repay(clients: Clients, market: Address, tokenId: bigint, amount: bigint | "max", onStep?: Progress) {
+export async function repay(clients: Clients, refs: MarketRefs, tokenId: bigint, amount: bigint | "max", onStep?: Progress) {
+  const account = clients.walletClient.account.address;
   try {
-    const debt = await readCurrentDebt(clients.publicClient, market, tokenId);
-    const all = amount === "max" || amount >= debt;
-    await approve(clients, await assetOf(clients, market), market, all ? repayAllowance(debt) : amount, onStep);
+    const position = await readPosition(clients.publicClient, refs, tokenId, account);
+    pass(repayGate(position, amount));
+    const all = amount === "max" || amount >= position.debt;
+    await approve(clients, position.asset, refs.market, all ? repayAllowance(position.debt) : amount, onStep);
     return await send(
       clients,
       "repay",
-      { address: market, abi: marketAbi, functionName: "repay", args: [tokenId, all ? maxUint256 : amount] },
+      { address: refs.market, abi: marketAbi, functionName: "repay", args: [tokenId, all ? maxUint256 : amount] },
       onStep,
     );
   } catch (error) {
@@ -157,7 +166,7 @@ export async function repay(clients: Clients, market: Address, tokenId: bigint, 
 }
 
 /** Borrower: `withdrawCollateral(tokenId, to)`, back to the sender. Reverts while anything is owed. */
-export function withdrawCollateral(clients: Clients, market: Address, tokenId: bigint, onStep?: Progress) {
+export function withdrawCollateral(clients: Clients, { market }: MarketRefs, tokenId: bigint, onStep?: Progress) {
   const account = clients.walletClient.account.address;
   return send(
     clients,
