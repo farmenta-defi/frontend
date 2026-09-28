@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The smart-contract checkout `pnpm abi:sync` builds the ABIs from.
+    ".cache/**",
   ]),
 ]);
 
