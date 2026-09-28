@@ -76,7 +76,12 @@ export const NETWORKS: Record<NetworkId, { name: string; chainId: number }> = {
  * lenders share (spec §1 no. 8 — two isolated markets, many pools inside each).
  */
 export type CollateralPool = {
-  /** Uniswap v4 poolId, keccak256 of the PoolKey. Mock until the pools are listed. */
+  /**
+   * Uniswap v4 poolId, keccak256 of the PoolKey. ETH/USDG and WETH/USDG carry
+   * the ids of real pools (docs ARCHITECTURE.md §18: no hook, fee 460 and fee
+   * 200), the two `pnpm fork` lists, so their pages act on real positions. The
+   * rest are placeholders. Which pools are listed comes from the backend (FAR-71).
+   */
   poolId: `0x${string}`;
   /** Lowercased pair, the last URL segment. Readable half of the address. */
   slug: string;
@@ -95,7 +100,7 @@ export type CollateralPool = {
 
 export const COLLATERAL_POOLS: CollateralPool[] = [
   {
-    poolId: "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836",
+    poolId: "0x54f7883914619af9105355bf83ed678bcf9f63560218ac61c9963b9503d0ba32",
     slug: "eth-usdg",
     network: "robinhood",
     tier: "blue-chip",
@@ -108,7 +113,7 @@ export const COLLATERAL_POOLS: CollateralPool[] = [
     marketSizeUsd: 1_240_000,
   },
   {
-    poolId: "0x4f2b6d0a8c1e35947ab30fd2c6e8194a7d5b0c93e21f4867a0dc5b93e1470a52",
+    poolId: "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
     slug: "weth-usdg",
     network: "robinhood",
     tier: "blue-chip",
