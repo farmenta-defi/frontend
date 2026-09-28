@@ -1,8 +1,8 @@
 "use client";
 
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
-import type { Address, Hex, TransactionReceipt } from "viem";
+import { useCallback, useMemo, useState } from "react";
+import { createPublicClient, http, type Address, type Hex, type TransactionReceipt } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
 
 import { chain } from "@/lib/chain";
@@ -11,10 +11,10 @@ import { chainKeys, invalidateAfterTransaction } from "@/lib/query-keys";
 import type { MarketTier } from "@/lib/risk-params";
 
 import type { Progress, Step } from "./actions";
+import { discoverPositions, POSITION_MANAGER_START_BLOCK } from "./discovery";
 import { explainError, type Explained } from "./errors";
 import { sessionGate, type Gate } from "./gates";
 import { readLenderState, readPosition, type Clients, type MarketRefs, type ReadClient } from "./reads";
-import { readTracked, track, untrack } from "./tracked-positions";
 
 /**
  * The React side of the on-chain actions: who is connected and whether they
@@ -107,43 +107,55 @@ export function usePositions(tier: MarketTier, tokenIds: readonly bigint[]) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Tracked positions                                                   */
+/* The wallet's positions                                              */
 /* ------------------------------------------------------------------ */
 
-const CHANGED = "farmenta:positions-changed";
-const subscribe = (notify: () => void) => {
-  window.addEventListener(CHANGED, notify);
-  window.addEventListener("storage", notify);
-  return () => {
-    window.removeEventListener(CHANGED, notify);
-    window.removeEventListener("storage", notify);
-  };
-};
+/**
+ * The client that reads the logs. Not the app's RPC override: a free-tier
+ * provider key refuses a log range of more than 10 blocks, and the range here
+ * runs from PositionManager's deployment to now. The chain's public RPC
+ * serves it. It answers a burst with HTTP 429, so a request is tried three
+ * times with a pause before the list reports that it could not be read.
+ *
+ * `NEXT_PUBLIC_LOGS_RPC_URL` and `NEXT_PUBLIC_LOGS_FROM_BLOCK` exist for
+ * `pnpm fork`, whose logs are on the fork and start at its block.
+ */
+const logsClient = createPublicClient({
+  chain,
+  transport: http(process.env.NEXT_PUBLIC_LOGS_RPC_URL?.trim() || chain.rpcUrls.default.http[0], {
+    retryCount: 2,
+    retryDelay: 750,
+    timeout: 4_000,
+  }),
+}) as ReadClient;
 
-/** The token ids this browser knows for the connected wallet, and how to change them. */
-export function useTrackedPositions() {
-  const { address: account } = useAccount();
+const logsFromBlock = /^\d+$/.test(process.env.NEXT_PUBLIC_LOGS_FROM_BLOCK?.trim() ?? "")
+  ? BigInt(process.env.NEXT_PUBLIC_LOGS_FROM_BLOCK!.trim())
+  : POSITION_MANAGER_START_BLOCK;
 
-  // A string, so that `useSyncExternalStore` sees the same snapshot until the list changes.
-  const snapshot = useSyncExternalStore(
-    subscribe,
-    () => (account ? readTracked(window.localStorage, chain.id, account).join(",") : ""),
-    () => "",
-  );
-  const tokenIds = useMemo(() => (snapshot ? snapshot.split(",").map(BigInt) : []), [snapshot]);
+/**
+ * The positions the connected wallet holds or has deposited, found in the
+ * chain's logs. `isError` means the logs could not be read, which is not the
+ * same as the wallet having none; `refetch` tries again.
+ */
+export function useWalletPositions() {
+  const { account, publicClient } = useSession();
+  const enabled = Boolean(deployment && account && publicClient);
 
-  const change = useCallback(
-    (apply: typeof track, tokenId: bigint) => {
-      if (!account) return;
-      apply(window.localStorage, chain.id, account, tokenId);
-      window.dispatchEvent(new Event(CHANGED));
-    },
-    [account],
-  );
-  const add = useCallback((tokenId: bigint) => change(track, tokenId), [change]);
-  const remove = useCallback((tokenId: bigint) => change(untrack, tokenId), [change]);
-
-  return { tokenIds, add, remove };
+  return useQuery({
+    queryKey: chainKeys.positions(account ?? "0x"),
+    queryFn: () =>
+      discoverPositions(
+        { logs: logsClient, reads: publicClient! },
+        { "blue-chip": marketRefs("blue-chip")!, meme: marketRefs("meme")! },
+        account!,
+        logsFromBlock,
+      ),
+    enabled,
+    // The transport has already tried three times.
+    retry: false,
+    staleTime: 60_000,
+  });
 }
 
 /* ------------------------------------------------------------------ */

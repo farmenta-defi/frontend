@@ -22,7 +22,8 @@ import { cn } from "@/lib/utils";
 const BLOCKED: Record<string, string> = {
   NotDeployed: "Contracts not deployed",
   NoAmount: "Enter an amount",
-  NoPosition: "Add a position",
+  NoPosition: "No position to borrow against",
+  PositionsUnavailable: "Positions not loaded",
   Loading: "Reading the chain…",
   InsufficientBalance: "Insufficient balance",
   ERC4626ExceededMaxWithdraw: "Over the withdrawable amount",

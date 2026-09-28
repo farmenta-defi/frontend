@@ -170,7 +170,8 @@ function SupplySide({ pool }: { pool: CollateralPool }) {
 function BorrowSide({ pool }: { pool: CollateralPool }) {
   const session = useSession();
   const action = useAction(pool.tier);
-  const positions = usePoolPositions(pool);
+  const list = usePoolPositions(pool);
+  const { positions } = list;
 
   const [picked, setPicked] = useState<bigint | null>(null);
   const [mode, setMode] = useState<"borrow" | "repay">("borrow");
@@ -184,7 +185,11 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
   const borrowing = mode === "borrow";
 
   const gate: Gate = !position
-    ? { ok: false, code: "NoPosition", message: "" }
+    ? {
+        ok: false,
+        code: list.status === "loading" ? "Loading" : list.status === "failed" ? "PositionsUnavailable" : "NoPosition",
+        message: "",
+      }
     : !held
       ? depositCollateralGate(position, pool.poolId)
       : borrowing
@@ -210,7 +215,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
     if (!position || tokenId === null) return;
     if (!held) {
       await action.run(
-        `Position #${tokenId} is deposited.`,
+        "The position is deposited.",
         (clients, refs, onStep) => depositCollateral(clients, refs, tokenId, onStep),
         pool.poolId,
       );
@@ -234,7 +239,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
   const takeBack = async () => {
     if (tokenId === null) return;
     await action.run(
-      `Position #${tokenId} is back in your wallet.`,
+      "The position is back in your wallet.",
       (clients, refs, onStep) => withdrawCollateral(clients, refs, tokenId, onStep),
       pool.poolId,
     );
@@ -246,7 +251,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
         <CardHead title="Collateral position">
           <AssetPair pair={pool.pair} size={20} />
         </CardHead>
-        <PositionPicker pool={pool} positions={positions} selected={tokenId} onSelect={pick} />
+        <PositionPicker pool={pool} list={list} selected={tokenId} onSelect={pick} />
       </Card>
 
       {held && (
@@ -314,7 +319,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
         onClick={submit}
         label={
           !held
-            ? `Deposit #${tokenId} as collateral`
+            ? "Deposit as collateral"
             : `${borrowing ? "Borrow" : "Repay"} ${amount ? fmtUsdg(usdgToNumber(amount)) : ""} USDG`
         }
         className="w-full"
@@ -326,11 +331,15 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
           busy={action.busy}
           onClick={takeBack}
           variant="secondary"
-          label={`Withdraw #${tokenId} to your wallet`}
+          label="Withdraw collateral to your wallet"
           className="w-full"
         />
       )}
-      <ActionNote session={session} gate={gate.ok || gate.code === "NoPosition" ? { ok: true } : gate} state={action.state} />
+      <ActionNote
+        session={session}
+        gate={gate.ok || ["NoPosition", "Loading", "PositionsUnavailable"].includes(gate.code) ? { ok: true } : gate}
+        state={action.state}
+      />
     </>
   );
 }
