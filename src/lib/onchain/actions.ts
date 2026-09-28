@@ -34,14 +34,35 @@ export type Step = {
 export type Progress = (step: Step) => void;
 
 /**
- * The gas limit a transaction is sent with: the estimate and a quarter more.
- * The estimate is taken at one block and the transaction runs in a later one,
- * where the market accrues interest first: it writes the index and the
- * reserves, which the estimate did not pay for when no time had passed. Sent
- * with the bare estimate, such a transaction is mined and runs out of gas.
- * Gas that is not used is not charged.
+ * What an accrual can add to a call, in gas, with room to spare.
+ *
+ * Every action but the collateral deposit starts by accruing interest. When
+ * the estimate is taken in the second of the market's last accrual, no time
+ * has passed and the accrual returns at once; the transaction runs in a later
+ * second, where it writes the index, the total and the reserves.
+ *
+ * Measured on the fork at contracts `49710c0`, as the smallest gas limit a
+ * call is mined with, over its estimate (`test/fork/gas.test.ts` holds it):
+ *
+ *   after an earlier accrual    21,296 (`borrow`) to 41,061 (`withdrawCollateral`)
+ *   the market's first accrual  38,975 (`borrow`) to 58,429 (`withdrawCollateral`)
+ *
+ * The first accrual writes the reserves from zero, which costs more. What a
+ * call needs is above what it ends up using: `withdrawCollateral` clears
+ * storage and is refunded for it, after having had to pay.
+ *
+ * It is a fixed amount, so it is added as one. A percentage of the estimate
+ * covers it on an expensive call and not on a cheap one: with 25%, `deposit`
+ * (estimate 95,646) and `withdraw` (97,618) were mined and ran out of gas.
  */
-const withMargin = (estimate: bigint) => (estimate * 125n) / 100n;
+export const ACCRUAL_GAS = 100_000n;
+
+/**
+ * The gas limit a transaction is sent with: the estimate, a tenth more for
+ * what else moves between the estimate and the block, and the accrual. Gas
+ * that is not used is not charged.
+ */
+export const gasLimitFor = (estimate: bigint) => estimate + estimate / 10n + ACCRUAL_GAS;
 
 type Call = { address: Address; abi: Abi; functionName: string; args: readonly unknown[] };
 
@@ -57,7 +78,7 @@ async function send(clients: Clients, name: Step["name"], call: Call, onStep?: P
       ...request,
       account: walletClient.account,
       chain,
-      gas: withMargin(estimate),
+      gas: gasLimitFor(estimate),
     });
 
     onStep?.({ name, phase: "confirm", hash });
