@@ -253,15 +253,18 @@ describe("finding a wallet's positions", () => {
       ]);
     });
 
-    it("keeps collateral that holds no liquidity in the list: its way out is still there", async () => {
+    it("lists collateral with the liquidity it holds", async () => {
       const user = await newUser("holder");
       await givePosition(user.address, POSITIONS.ethUsdgInRange);
+      const held = await liquidityOf(POSITIONS.ethUsdgInRange);
       await depositCollateral(user.clients, blueChip, POSITIONS.ethUsdgInRange);
-      const found = await find(user.address);
 
-      // The rule is on the place, not on the liquidity: the filter must not reach collateral.
-      expect(found).toMatchObject([{ tokenId: POSITIONS.ethUsdgInRange, place: "collateral" }]);
-      expect(found[0].liquidity).toBe(await liquidityOf(POSITIONS.ethUsdgInRange));
+      // Collateral that holds nothing cannot be made on the fork: the market refuses to empty a
+      // position below the pool's minimum. That rule is held by the unit tests of `placeOf`.
+      expect(await find(user.address)).toMatchObject([
+        { tokenId: POSITIONS.ethUsdgInRange, place: "collateral", liquidity: held },
+      ]);
+      expect(held).toBeGreaterThan(0n);
     });
 
     it("reads PositionManager's logs from its deployment block unless told otherwise", () => {

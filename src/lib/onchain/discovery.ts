@@ -60,6 +60,33 @@ const collateralDeposited = marketAbi.find((entry) => entry.type === "event" && 
 
 const same = (a: Address, b: Address) => a.toLowerCase() === b.toLowerCase();
 
+/** What the chain says about one token id: who holds it, what it holds, and whose loan it backs in each market. */
+export type TokenFacts = {
+  holder: Address;
+  liquidity: bigint;
+  /** Per market: the market's address, and the owner of the loan it records for the token. */
+  loans: readonly { tier: MarketTier; market: Address; owner: Address }[];
+};
+
+/**
+ * Where a token is for `account`, or `null` when it is not to be listed.
+ *
+ * - Held by the account: in the wallet, unless it holds no liquidity. An empty
+ *   position is worth nothing and the market refuses it (`PositionIsEmpty`).
+ * - Held by a market that records the loan to the account: collateral,
+ *   **whatever it holds**. Its loan and its way out are still there, and a
+ *   borrower who cannot see the position cannot repay or withdraw it.
+ * - Anything else is someone else's.
+ */
+export function placeOf(
+  { holder, liquidity, loans }: TokenFacts,
+  account: Address,
+): Pick<Discovered, "place" | "tier"> | null {
+  if (same(holder, account)) return liquidity > 0n ? { place: "wallet", tier: null } : null;
+  const held = loans.find((loan) => same(holder, loan.market) && same(loan.owner, account));
+  return held ? { place: "collateral", tier: held.tier } : null;
+}
+
 export async function discoverPositions(
   { logs, reads }: DiscoveryClients,
   markets: Record<MarketTier, MarketRefs>,
@@ -127,15 +154,20 @@ export async function discoverPositions(
     const liquidity = held.result as bigint;
     const position = { tokenId, poolKey, poolId: poolIdOf(poolKey), ...ticksOf(packed), liquidity };
 
-    if (same(holder, account)) {
-      if (liquidity > 0n) found.push({ ...position, place: "wallet", tier: null });
-      return;
-    }
-    tiers.forEach((tier, at) => {
-      const loan = loans[at];
-      if (loan.status !== "success" || !same(holder, markets[tier].market)) return;
-      if (same((loan.result as { owner: Address }).owner, account)) found.push({ ...position, place: "collateral", tier });
-    });
+    const where = placeOf(
+      {
+        holder,
+        liquidity,
+        loans: tiers.flatMap((tier, at) => {
+          const loan = loans[at];
+          return loan.status === "success"
+            ? [{ tier, market: markets[tier].market, owner: (loan.result as { owner: Address }).owner }]
+            : [];
+        }),
+      },
+      account,
+    );
+    if (where) found.push({ ...position, ...where });
   });
 
   // Newest first: a token id only grows, and the position someone just opened is the one they came for.
