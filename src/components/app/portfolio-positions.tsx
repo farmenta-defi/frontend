@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
 import { ActionButton, ActionNote } from "@/components/app/action-controls";
-import { describePosition, RangeLine } from "@/components/app/position-picker";
+import { RangeLine } from "@/components/app/position-picker";
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { hfLabel, hfTone } from "@/components/ui/health-bar";
 import { COLLATERAL_POOLS, fmtUsd, fmtUsdg, MARKETS, poolHref } from "@/lib/markets";
 import { repay, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
 import { samePool } from "@/lib/onchain/contracts";
+import { describePosition } from "@/lib/onchain/describe";
 import { repayGate, withdrawCollateralGate, withdrawGate, type Gate } from "@/lib/onchain/gates";
 import { useAction, useLenderState, usePositions, useSession, useWalletPositions } from "@/lib/onchain/hooks";
 import type { PositionState } from "@/lib/onchain/reads";

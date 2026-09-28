@@ -4,11 +4,11 @@ import { useMemo } from "react";
 
 import { buttonClasses } from "@/components/ui/button";
 import { fmtUsd, type CollateralPool } from "@/lib/markets";
+import { describePosition } from "@/lib/onchain/describe";
 import { inPool } from "@/lib/onchain/discovery";
 import { usePositions, useSession, useWalletPositions } from "@/lib/onchain/hooks";
-import { feeLabel, priceRange, rangeLabel } from "@/lib/onchain/range";
 import type { PositionState } from "@/lib/onchain/reads";
-import { usdgToNumber, wadToNumber } from "@/lib/units";
+import { usdgToNumber } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 /**
@@ -48,29 +48,6 @@ export function usePoolPositions(pool: CollateralPool): PositionList {
     positions,
     status: discovery.isError ? "failed" : reading ? "loading" : discovery.data ? "ready" : "idle",
     retry: () => void discovery.refetch(),
-  };
-}
-
-/** A position in the words its owner knows it by. */
-export function describePosition(position: PositionState) {
-  const range =
-    position.poolKey && position.ticks && position.decimals
-      ? rangeLabel(priceRange(position.poolKey, position.ticks, position.decimals, position.asset))
-      : null;
-  // The valuer splits the position at the oracle's price: both tokens held means the price is inside the range.
-  const inRange = position.holdings ? position.holdings.amount0 > 0n && position.holdings.amount1 > 0n : null;
-  // Collateral is worth what the market lends against; a position in the wallet, what it holds.
-  const valueUsd = position.risk
-    ? wadToNumber(position.risk.positionValue)
-    : position.holdings
-      ? wadToNumber(position.holdings.principalUsd + position.holdings.feesUsd)
-      : null;
-
-  return {
-    fee: position.poolKey ? feeLabel(position.poolKey.fee) : null,
-    range: range === null ? null : range === "Full range" ? range : `${range} USDG`,
-    inRange,
-    valueUsd,
   };
 }
 
