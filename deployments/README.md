@@ -21,5 +21,8 @@ With the variable unset the app still builds and every page opens; the action bu
 disabled and say that the contracts are not deployed. With the variable set to a name that has
 no file here, the build stops.
 
+`mainnet.json` is the deployment on Robinhood Chain (4663) of 28 Sep 2026, built from `smart-contract`
+`fc98221`; production sets `NEXT_PUBLIC_FARMENTA_DEPLOYMENT=mainnet`.
+
 `example.json` shows the shape with placeholder addresses. `fork.json` is what `pnpm test:fork`
 writes from its own rehearsal deploy; it is not committed.

@@ -1,0 +1,64 @@
+{
+  "chainId": 4663,
+  "owner": "0x20B2d384d5a4303e10355D3a8Bff59e9940Ad5E8",
+  "guardian": "0xa6A36ae078a4f1f6A2659951Ea082cB88f16F9F2",
+  "collateralPolicy": {
+    "address": "0xcC6d1eCA4577983A01849a11F4499d98bD28a2d3",
+    "startBlock": 74904488
+  },
+  "twapRecorder": {
+    "address": "0x320307D8e3A1Fad3C4622141a1323B9B854404D4",
+    "startBlock": 74904480
+  },
+  "markets": {
+    "blueChip": {
+      "address": "0x1f69d27F1ac7415A4252957951900130CB885484",
+      "startBlock": 74904517
+    },
+    "meme": {
+      "address": "0x992c879573eeF8bc948fc3f49d5e5C968204E751",
+      "startBlock": 74904522
+    }
+  },
+  "timelock": {
+    "address": "0x20B2d384d5a4303e10355D3a8Bff59e9940Ad5E8",
+    "startBlock": 74904474
+  },
+  "policyAcceptOperation": null,
+  "priceOracle": {
+    "address": "0xb9D453d966f55cd6e5b4E813D75739fE0272E5Ff",
+    "startBlock": 74904493
+  },
+  "positionValuer": {
+    "address": "0xb90D1b97738Beb75befDDbF8bF0EA59AF366a0B3",
+    "startBlock": 74904498
+  },
+  "interestRateModel": {
+    "address": "0x008a71fDC5A2e718895e54165630049F846A80C0",
+    "startBlock": 74904504
+  },
+  "marketImplementation": {
+    "address": "0xb59d1dd281D8F76592e1F83E54890BEB62CDb6E8",
+    "startBlock": 74904512
+  },
+  "lenses": {
+    "blueChip": {
+      "address": "0x425862c2cC794f22584aA3D9BAf0Fa497Dc89153",
+      "startBlock": 74904527
+    },
+    "meme": {
+      "address": "0x7147E8C771Db492162262E4F7F68b06072aDDf93",
+      "startBlock": 74904532
+    }
+  },
+  "liquidatorHelpers": {
+    "blueChip": {
+      "address": "0x48ecD3270110aD3D4db485C8C02154b57b2C7cC7",
+      "startBlock": 74904537
+    },
+    "meme": {
+      "address": "0xA82645980f78e80c6F4e0176d8602e919b165bc4",
+      "startBlock": 74904542
+    }
+  }
+}
