@@ -1,12 +1,14 @@
+import { focusManager, QueryClient, QueryObserver } from "@tanstack/react-query";
 import { createPublicClient, custom, http, type EIP1193RequestFn } from "viem";
 import { robinhood } from "viem/chains";
-import { describe, expect, inject, it } from "vitest";
+import { afterEach, describe, expect, inject, it } from "vitest";
 
 import { borrow, depositCollateral, supply, withdrawCollateral } from "@/lib/onchain/actions";
 import {
   discoverPositions,
   inPool,
   POSITION_MANAGER_START_BLOCK,
+  walletPositionsQuery,
   type Discovered,
 } from "@/lib/onchain/discovery";
 import { feeLabel } from "@/lib/onchain/range";
@@ -264,6 +266,120 @@ describe("finding a wallet's positions", () => {
 
     it("reads PositionManager's logs from its deployment block unless told otherwise", () => {
       expect(POSITION_MANAGER_START_BLOCK).toBe(9_073n);
+    });
+  });
+});
+
+describe("the list when the user comes back to the tab", () => {
+  isolateEachTest();
+  afterEach(() => focusManager.setFocused(undefined));
+
+  /** The query as the pages run it, under the provider's defaults (src/app/providers.tsx). */
+  function watch(account: `0x${string}`) {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { staleTime: 5_000, refetchOnWindowFocus: false } },
+    });
+    queryClient.mount();
+    const observer = new QueryObserver(queryClient, walletPositionsQuery(clients, markets, account, FORK_BLOCK));
+    const seen: { ids: bigint[]; loading: boolean }[] = [];
+    const stop = observer.subscribe((result) => {
+      seen.push({ ids: idsOf(result.data ?? []), loading: result.isLoading });
+    });
+    const settled = async () => {
+      for (let waited = 0; waited < 200 && observer.getCurrentResult().isFetching; waited++) {
+        await new Promise((next) => setTimeout(next, 25));
+      }
+      return observer.getCurrentResult();
+    };
+    return {
+      seen,
+      settled,
+      /**
+       * The window loses focus and regains it. Waits for the read that follows to land, which is
+       * seen on the time of the data and not on `isFetching`: against a local fork a read is over
+       * in a few milliseconds.
+       */
+      leaveAndComeBack: async () => {
+        const before = observer.getCurrentResult().dataUpdatedAt;
+        await new Promise((next) => setTimeout(next, 5));
+        focusManager.setFocused(false);
+        focusManager.setFocused(true);
+        for (let waited = 0; waited < 200 && observer.getCurrentResult().dataUpdatedAt === before; waited++) {
+          await new Promise((next) => setTimeout(next, 25));
+        }
+        expect(observer.getCurrentResult().dataUpdatedAt, "coming back to the tab read nothing").toBeGreaterThan(before);
+      },
+      stop: () => {
+        stop();
+        queryClient.unmount();
+      },
+    };
+  }
+
+  describe("positive", () => {
+    it("a position that reached the wallet meanwhile is in the list, with no reload", async () => {
+      const user = await newUser("holder");
+      await givePosition(user.address, POSITIONS.ethUsdgAboveRange);
+      const list = watch(user.address);
+      expect(idsOf((await list.settled()).data ?? [])).toEqual([POSITIONS.ethUsdgAboveRange]);
+
+      // Seconds later, well inside the 60 s the list counts as fresh.
+      await givePosition(user.address, POSITIONS.ethUsdgInRange);
+      await list.leaveAndComeBack();
+
+      expect(idsOf((await list.settled()).data ?? [])).toEqual([POSITIONS.ethUsdgInRange, POSITIONS.ethUsdgAboveRange]);
+      list.stop();
+    });
+  });
+
+  describe("negative", () => {
+    it("does not read again by itself while the user stays on the tab", async () => {
+      const user = await newUser("holder");
+      await givePosition(user.address, POSITIONS.ethUsdgAboveRange);
+      const list = watch(user.address);
+      await list.settled();
+
+      await givePosition(user.address, POSITIONS.ethUsdgInRange);
+      await new Promise((next) => setTimeout(next, 500));
+
+      expect(idsOf((await list.settled()).data ?? [])).toEqual([POSITIONS.ethUsdgAboveRange]);
+      list.stop();
+    });
+  });
+
+  describe("edge case", () => {
+    it("keeps the list on screen while it is read again: loading is the first read only", async () => {
+      const user = await newUser("holder");
+      await givePosition(user.address, POSITIONS.ethUsdgAboveRange);
+      const list = watch(user.address);
+      await list.settled();
+      const first = list.seen.length;
+      expect(list.seen.some((result) => result.loading)).toBe(true);
+
+      await givePosition(user.address, POSITIONS.ethUsdgInRange);
+      await list.leaveAndComeBack();
+      await list.settled();
+
+      const during = list.seen.slice(first);
+      expect(during.length).toBeGreaterThan(0);
+      expect(during.every((result) => !result.loading)).toBe(true);
+      expect(during.every((result) => result.ids.includes(POSITIONS.ethUsdgAboveRange))).toBe(true);
+      list.stop();
+    });
+
+    it("a position that left the wallet meanwhile is gone from the list", async () => {
+      const user = await newUser("holder");
+      const other = await newUser("other");
+      await givePosition(user.address, POSITIONS.ethUsdgAboveRange);
+      await givePosition(user.address, POSITIONS.ethUsdgInRange);
+      const list = watch(user.address);
+      await list.settled();
+
+      await givePosition(other.address, POSITIONS.ethUsdgInRange);
+      await list.leaveAndComeBack();
+
+      expect(idsOf((await list.settled()).data ?? [])).toEqual([POSITIONS.ethUsdgAboveRange]);
+      list.stop();
     });
   });
 });

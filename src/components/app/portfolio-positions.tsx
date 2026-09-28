@@ -363,7 +363,8 @@ export function BorrowPositions({ empty }: { empty: ReactNode }) {
       </div>
     );
   }
-  if (discovery.isLoading || rows.length < found.length) {
+  // The first read only; a list that is being read again stays on screen.
+  if (discovery.isLoading || (rows.length === 0 && found.length > 0)) {
     return <p className="px-1 py-6 text-[13px] text-steel-500">Looking for your positions…</p>;
   }
   if (rows.length === 0) return <>{empty}</>;

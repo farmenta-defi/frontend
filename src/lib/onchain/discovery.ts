@@ -1,5 +1,6 @@
 import type { Address, Hex } from "viem";
 
+import { chainKeys } from "@/lib/query-keys";
 import type { MarketTier } from "@/lib/risk-params";
 
 import { marketAbi, poolIdOf, positionsAbi, type PoolKey } from "./contracts";
@@ -139,6 +140,33 @@ export async function discoverPositions(
 
   // Newest first: a token id only grows, and the position someone just opened is the one they came for.
   return found.sort((a, b) => (a.tokenId < b.tokenId ? 1 : a.tokenId > b.tokenId ? -1 : 0));
+}
+
+/** How long a list counts as fresh. Coming back to the tab reads it again whatever its age. */
+const FRESH_MS = 60_000;
+
+/**
+ * The query that finds a wallet's positions, as the pages run it.
+ *
+ * It reads again whenever the window regains focus, however fresh the list is:
+ * a user opens a position on Uniswap in another tab and comes back, and the
+ * position has to be there without a reload. Only this query does so; the
+ * other reads refresh on an interval. It does not retry: the transport of the
+ * logs already tried three times.
+ */
+export function walletPositionsQuery(
+  clients: DiscoveryClients,
+  markets: Record<MarketTier, MarketRefs>,
+  account: Address,
+  fromBlock: bigint = POSITION_MANAGER_START_BLOCK,
+) {
+  return {
+    queryKey: chainKeys.positions(account),
+    queryFn: () => discoverPositions(clients, markets, account, fromBlock),
+    retry: false,
+    staleTime: FRESH_MS,
+    refetchOnWindowFocus: "always",
+  } as const;
 }
 
 export const inPool = (positions: readonly Discovered[], poolId: Hex) =>

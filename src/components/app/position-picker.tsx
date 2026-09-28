@@ -42,7 +42,9 @@ export function usePoolPositions(pool: CollateralPool): PositionList {
       (position): position is PositionState =>
         position !== undefined && (position.place === "wallet" || position.place === "collateral"),
     );
-  const reading = discovery.isLoading || (found.length > 0 && details.some((query) => query.isLoading));
+  // The first read only. While the list is read again, or a position that has just arrived is
+  // being read, what is on screen stays on screen.
+  const reading = discovery.isLoading || (positions.length === 0 && details.some((query) => query.isLoading));
 
   return {
     positions,

@@ -11,7 +11,7 @@ import { chainKeys, invalidateAfterTransaction } from "@/lib/query-keys";
 import type { MarketTier } from "@/lib/risk-params";
 
 import type { Progress, Step } from "./actions";
-import { discoverPositions, POSITION_MANAGER_START_BLOCK } from "./discovery";
+import { POSITION_MANAGER_START_BLOCK, walletPositionsQuery } from "./discovery";
 import { explainError, type Explained } from "./errors";
 import { sessionGate, type Gate } from "./gates";
 import { readLenderState, readPosition, type Clients, type MarketRefs, type ReadClient } from "./reads";
@@ -136,25 +136,23 @@ const logsFromBlock = /^\d+$/.test(process.env.NEXT_PUBLIC_LOGS_FROM_BLOCK?.trim
 /**
  * The positions the connected wallet holds or has deposited, found in the
  * chain's logs. `isError` means the logs could not be read, which is not the
- * same as the wallet having none; `refetch` tries again.
+ * same as the wallet having none; `refetch` tries again. `isLoading` is the
+ * first read only: while the list is read again, the one on screen stays.
  */
 export function useWalletPositions() {
   const { account, publicClient } = useSession();
-  const enabled = Boolean(deployment && account && publicClient);
+  const blueChip = marketRefs("blue-chip");
+  const meme = marketRefs("meme");
+  const enabled = Boolean(blueChip && meme && account && publicClient);
 
   return useQuery({
-    queryKey: chainKeys.positions(account ?? "0x"),
-    queryFn: () =>
-      discoverPositions(
-        { logs: logsClient, reads: publicClient! },
-        { "blue-chip": marketRefs("blue-chip")!, meme: marketRefs("meme")! },
-        account!,
-        logsFromBlock,
-      ),
+    ...walletPositionsQuery(
+      { logs: logsClient, reads: publicClient! },
+      { "blue-chip": blueChip!, meme: meme! },
+      account ?? "0x",
+      logsFromBlock,
+    ),
     enabled,
-    // The transport has already tried three times.
-    retry: false,
-    staleTime: 60_000,
   });
 }
 
