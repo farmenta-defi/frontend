@@ -1,0 +1,5 @@
+{
+  "message": "range must be one of 1w, 1m, 3m, or 1y",
+  "error": "Bad Request",
+  "statusCode": 400
+}

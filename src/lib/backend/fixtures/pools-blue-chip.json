@@ -1,0 +1,53 @@
+[
+  {
+    "id": "0x5875d407a42965b0e768c8925cea290e06fa50603ef34fc99eb92a1050e6ae36",
+    "currency0": null,
+    "currency1": null,
+    "fee": null,
+    "tickSpacing": null,
+    "hooks": null,
+    "tier": 1,
+    "maxLtvBps": 5000,
+    "ltBps": 6500,
+    "liquidatorBonusBps": 500,
+    "removeHaircutBps": 0,
+    "debtCapUsdg": "25000000000",
+    "minPositionUsd": "50000000000000000000",
+    "frozen": false,
+    "effectiveLtBps": 6500
+  },
+  {
+    "id": "0x6444a8e0b267406a15db74ca00c4a24bdfa81ed3180f5b6d0851f8ed6f4f29c5",
+    "currency0": null,
+    "currency1": null,
+    "fee": null,
+    "tickSpacing": null,
+    "hooks": null,
+    "tier": 1,
+    "maxLtvBps": 5000,
+    "ltBps": 6500,
+    "liquidatorBonusBps": 500,
+    "removeHaircutBps": 0,
+    "debtCapUsdg": "25000000000",
+    "minPositionUsd": "50000000000000000000",
+    "frozen": false,
+    "effectiveLtBps": 6500
+  },
+  {
+    "id": "0xbac3aa3b91584a53a579b3c999a56756e954e59247e497bad1d25a4334bde551",
+    "currency0": null,
+    "currency1": null,
+    "fee": null,
+    "tickSpacing": null,
+    "hooks": null,
+    "tier": 1,
+    "maxLtvBps": 6500,
+    "ltBps": 7500,
+    "liquidatorBonusBps": 500,
+    "removeHaircutBps": 0,
+    "debtCapUsdg": "25000000000",
+    "minPositionUsd": "50000000000000000000",
+    "frozen": false,
+    "effectiveLtBps": 7500
+  }
+]
