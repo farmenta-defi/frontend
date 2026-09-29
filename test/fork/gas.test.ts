@@ -1,5 +1,5 @@
 import { erc20Abi, maxUint256, type Abi, type Address } from "viem";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   ACCRUAL_GAS,
@@ -28,6 +28,13 @@ import { anvil, blueChip, dealUsdg, givePosition, isolateEachTest, newUser, publ
  * passed, so the situation is built by hand: `accrue()` is mined, the estimate
  * is taken at that block, and the call is mined an hour later with the limit
  * the app computes from that estimate.
+ *
+ * The clock is held while the estimate is taken. anvil gives an estimate the
+ * time of its next block, whatever block is asked for, and that time follows
+ * the wall clock: measured on this fork, the estimate of a full repayment is
+ * 101,622 within the second of the accrual and 121,952 from the next second
+ * on, because the accrual is then part of it. Without the hold, the situation
+ * is only built when the estimate happens to be asked for within that second.
  */
 const USDG = 1_000_000n;
 const HOUR = 3_600n;
@@ -37,6 +44,22 @@ const SPARE = POSITIONS.ethUsdgAboveRange;
 const FRESH = POSITIONS.metaUsdgInRange;
 
 type Call = { address: Address; abi: Abi; functionName: string; args: readonly unknown[] };
+
+/** Mines `accrue()` and holds the clock at its second: every block until the release has its time. */
+async function accrueAndHoldTheClock({ publicClient: reads, walletClient }: Clients) {
+  await anvil.setBlockTimestampInterval({ interval: 0 });
+  const accrued = await reads.waitForTransactionReceipt({
+    hash: await walletClient.writeContract({ address: market, abi: marketAbi, functionName: "accrue" }),
+  });
+  const { timestamp } = await reads.getBlock({ blockNumber: accrued.blockNumber });
+  return { blockNumber: accrued.blockNumber, timestamp };
+}
+
+/** Lets the clock run again, and has the next block mined `after` seconds past `timestamp`. */
+async function releaseTheClock(timestamp: bigint, after: bigint) {
+  await anvil.removeBlockTimestampInterval();
+  await anvil.setNextBlockTimestamp({ timestamp: timestamp + after });
+}
 
 /** A market with a lender, a loan that accrues, collateral without a loan, and a position to deposit. */
 async function marketWithALoan() {
@@ -72,18 +95,12 @@ async function marketWithALoan() {
  * the accrual mined here is the market's first: the dearest one, which writes
  * the reserves from zero.
  */
-async function sentAfterAnAccrual({ walletClient }: Clients, call: Call, limitFor = gasLimitFor, after = HOUR) {
-  const accrued = await publicClient.waitForTransactionReceipt({
-    hash: await walletClient.writeContract({ address: market, abi: marketAbi, functionName: "accrue" }),
-  });
-  const estimate = await publicClient.estimateContractGas({
-    ...call,
-    account: walletClient.account,
-    blockNumber: accrued.blockNumber,
-  });
+async function sentAfterAnAccrual(clients: Clients, call: Call, limitFor = gasLimitFor, after = HOUR) {
+  const { walletClient } = clients;
+  const { blockNumber, timestamp } = await accrueAndHoldTheClock(clients);
+  const estimate = await publicClient.estimateContractGas({ ...call, account: walletClient.account, blockNumber });
 
-  const { timestamp } = await publicClient.getBlock({ blockNumber: accrued.blockNumber });
-  await anvil.setNextBlockTimestamp({ timestamp: timestamp + after });
+  await releaseTheClock(timestamp, after);
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: await walletClient.writeContract({ ...call, gas: limitFor(estimate) }),
   });
@@ -96,18 +113,16 @@ async function sentAfterAnAccrual({ walletClient }: Clients, call: Call, limitFo
  * they send an hour later. Records the estimate the action got and the gas
  * limit it sent with.
  */
-async function inTheSecondOfAnAccrual({ publicClient: reads, walletClient }: Clients) {
-  const accrued = await reads.waitForTransactionReceipt({
-    hash: await walletClient.writeContract({ address: market, abi: marketAbi, functionName: "accrue" }),
-  });
-  const { timestamp } = await reads.getBlock({ blockNumber: accrued.blockNumber });
+async function inTheSecondOfAnAccrual(real: Clients) {
+  const { publicClient: reads, walletClient } = real;
+  const { blockNumber, timestamp } = await accrueAndHoldTheClock(real);
   const seen: { estimate?: bigint; gas?: bigint } = {};
 
   const clients = {
     publicClient: {
       ...reads,
       estimateContractGas: async (args: Parameters<typeof reads.estimateContractGas>[0]) => {
-        seen.estimate = await reads.estimateContractGas({ ...args, blockNumber: accrued.blockNumber } as never);
+        seen.estimate = await reads.estimateContractGas({ ...args, blockNumber } as never);
         return seen.estimate;
       },
     },
@@ -115,7 +130,7 @@ async function inTheSecondOfAnAccrual({ publicClient: reads, walletClient }: Cli
       ...walletClient,
       writeContract: async (args: Parameters<typeof walletClient.writeContract>[0]) => {
         seen.gas = (args as { gas?: bigint }).gas;
-        await anvil.setNextBlockTimestamp({ timestamp: timestamp + HOUR });
+        await releaseTheClock(timestamp, HOUR);
         return walletClient.writeContract(args);
       },
     },
@@ -132,6 +147,8 @@ const call = (functionName: string, args: readonly unknown[]): Call => ({
 
 describe("the gas limit, when the estimate was taken in the second of an accrual", () => {
   isolateEachTest();
+  // A test that stopped halfway must not leave the clock held for the next one.
+  afterEach(() => anvil.removeBlockTimestampInterval());
 
   describe("positive", () => {
     it("supply, withdraw, borrow and repay are mined and succeed", async () => {
