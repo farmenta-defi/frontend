@@ -75,7 +75,7 @@ export function harnessOn(url: string, manifestText: string) {
   /** A wallet nobody has used, with gas money, and the clients the actions take. */
   async function newUser(label: string): Promise<{ address: Address; clients: Clients }> {
     const account = privateKeyToAccount(userKey(label));
-    await anvil.setBalance({ address: account.address, value: parseEther("10") });
+    await fund(account.address);
     const walletClient = createWalletClient({ account, chain: robinhood, transport, pollingInterval });
     return { address: account.address, clients: { publicClient, walletClient } };
   }
@@ -103,8 +103,22 @@ export function harnessOn(url: string, manifestText: string) {
   const ownerOf = (tokenId: bigint) =>
     publicClient.readContract({ address: POSITION_MANAGER, abi: nft, functionName: "ownerOf", args: [tokenId] });
 
+  /**
+   * Gas money for `address`, read back before it is relied on. In one run anvil refused a
+   * transfer for insufficient funds right after the holder's balance had been set; why is
+   * not established. The balance is set until it reads as set.
+   */
+  async function fund(address: Address) {
+    const value = parseEther("10");
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await anvil.setBalance({ address, value });
+      if ((await publicClient.getBalance({ address })) >= value) return;
+    }
+    throw new Error(`harness: the balance of ${address} does not read as set`);
+  }
+
   async function as<T>(address: Address, run: () => Promise<T>): Promise<T> {
-    await anvil.setBalance({ address, value: parseEther("10") });
+    await fund(address);
     await anvil.impersonateAccount({ address });
     try {
       return await run();
