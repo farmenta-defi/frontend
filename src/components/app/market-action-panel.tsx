@@ -7,7 +7,8 @@ import { PositionPicker, usePoolPositions } from "@/components/app/position-pick
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { HealthBar, hfLabel, hfTone } from "@/components/ui/health-bar";
 import { Segmented } from "@/components/ui/segmented";
-import { fmtUsd, fmtUsdg } from "@/lib/format";
+import { useMarket, usePoolFigures } from "@/lib/backend/hooks";
+import { fmtPct, fmtUsd, fmtUsdg, orDash } from "@/lib/format";
 import { MARKETS, NETWORKS, type CollateralPool } from "@/lib/markets";
 import { borrow, depositCollateral, repay, supply, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
 import {
@@ -22,7 +23,7 @@ import {
 import { useAction, useLenderState, useSession } from "@/lib/onchain/hooks";
 import { previewLoan } from "@/lib/onchain/preview";
 import { RISK_PARAMS } from "@/lib/risk-params";
-import { formatUsdg, parseUsdg, usdgToNumber } from "@/lib/units";
+import { bpsToFraction, formatUsdg, parseUsdg, usdgToNumber } from "@/lib/units";
 import { cn } from "@/lib/utils";
 
 /**
@@ -37,7 +38,8 @@ import { cn } from "@/lib/utils";
  *
  * Every figure a transaction is sized from (balances, the withdrawable amount,
  * the debt, the borrowing room, the health factor) is read from the chain. The
- * rates and the utilisation are the page's display figures.
+ * rates and the utilisation are read from the backend, and are a dash while
+ * it cannot be read; the actions do not wait for them.
  */
 type Tab = "borrow" | "supply";
 
@@ -86,6 +88,7 @@ function SupplySide({ pool }: { pool: CollateralPool }) {
   const market = MARKETS.find((item) => item.id === pool.tier)!;
   const risk = RISK_PARAMS[pool.tier];
   const session = useSession();
+  const lending = useMarket(pool.tier).data?.latest;
   const { data: state } = useLenderState(pool.tier);
   const action = useAction(pool.tier);
 
@@ -144,9 +147,9 @@ function SupplySide({ pool }: { pool: CollateralPool }) {
         <Network pool={pool} />
         <Row label="Market">{market.name}</Row>
         <Row label="Supply APY">
-          <span className="text-brand-300">{market.supplyApy.toFixed(2)}%</span>
+          <span className="text-brand-300">{orDash(lending?.supplyApyPct, fmtPct)}</span>
         </Row>
-        <Row label="Utilization">{((pool.totalBorrowUsd / pool.liquidityUsd) * 100).toFixed(1)}%</Row>
+        <Row label="Utilization">{orDash(lending?.utilizationPct, fmtPct)}</Row>
         <Row label="Your deposit">{usdg(state?.deposited)}</Row>
         {/* Idle USDG in the market, read from the chain: what lenders can take out between
             them right now. There is no per-pool liquidity to subtract a pool's debt from. */}
@@ -171,6 +174,7 @@ function SupplySide({ pool }: { pool: CollateralPool }) {
 function BorrowSide({ pool }: { pool: CollateralPool }) {
   const session = useSession();
   const action = useAction(pool.tier);
+  const figures = usePoolFigures(pool.poolId).data;
   const list = usePoolPositions(pool);
   const { positions } = list;
 
@@ -201,6 +205,13 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
   const limit = !position || !held ? undefined : borrowing ? position.risk?.maxBorrow : position.debt;
   const over = !gate.ok && ["BorrowExceedsMaxLtv", "InsufficientBalance"].includes(gate.code);
   const preview = position && held ? previewLoan(position, borrowing ? (amount ?? 0n) : -(amount ?? 0n)) : null;
+  // The pool's own threshold: from the chain once a position is read, from the backend until then.
+  const liquidationLtvPct =
+    preview !== null
+      ? preview.liquidationLtv * 100
+      : position?.pool.terms
+        ? bpsToFraction(position.pool.terms.ltBps) * 100
+        : (figures?.terms.liquidationThresholdPct ?? null);
 
   const change = (next: string) => {
     setText(next);
@@ -289,9 +300,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
         <Row label="Loan (USDG)">{preview ? fmtUsdg(preview.debt) : held ? fmtUsdg(usdgToNumber(position.debt)) : "—"}</Row>
         <Row label={`Collateral (${pool.pair})`}>{preview ? fmtUsd(preview.collateralUsd) : "—"}</Row>
         <Row label="LTV">{preview ? `${(preview.ltv * 100).toFixed(2)}%` : "—"}</Row>
-        <Row label="Liquidation LTV">
-          {((preview?.liquidationLtv ?? RISK_PARAMS[pool.tier].liqThreshold) * 100).toFixed(0)}%
-        </Row>
+        <Row label="Liquidation LTV">{orDash(liquidationLtvPct, (value) => `${value.toFixed(0)}%`)}</Row>
         <Row label="Health factor">
           {preview && preview.debt > 0 ? (
             <span
@@ -309,7 +318,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
             "—"
           )}
         </Row>
-        <Row label="Rate">{pool.borrowAprPct.toFixed(2)}%</Row>
+        <Row label="Rate">{orDash(figures?.borrowAprPct, fmtPct)}</Row>
         {preview && preview.debt > 0 && <HealthBar hf={preview.healthFactor} className="mt-2.5" />}
       </Card>
 
