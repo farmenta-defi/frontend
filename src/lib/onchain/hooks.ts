@@ -113,9 +113,11 @@ export function usePositions(tier: MarketTier, tokenIds: readonly bigint[]) {
 /**
  * The client that reads the logs. Not the app's RPC override: a free-tier
  * provider key refuses a log range of more than 10 blocks, and the range here
- * runs from PositionManager's deployment to now. The chain's public RPC
- * serves it. It answers a burst with HTTP 429, so a request is tried three
- * times with a pause before the list reports that it could not be read.
+ * runs from PositionManager's deployment to now, in windows of
+ * `LOG_WINDOW_BLOCKS` blocks. The chain's public RPC serves them. It answers
+ * a burst with HTTP 429 and goes on refusing for up to 4.5 seconds, so a
+ * request is tried four times, 0.75, 1.5 and 3 seconds apart, before the list
+ * reports that it could not be read.
  *
  * `NEXT_PUBLIC_LOGS_RPC_URL` and `NEXT_PUBLIC_LOGS_FROM_BLOCK` exist for
  * `pnpm fork`, whose logs are on the fork and start at its block.
@@ -123,7 +125,7 @@ export function usePositions(tier: MarketTier, tokenIds: readonly bigint[]) {
 const logsClient = createPublicClient({
   chain,
   transport: http(process.env.NEXT_PUBLIC_LOGS_RPC_URL?.trim() || chain.rpcUrls.default.http[0], {
-    retryCount: 2,
+    retryCount: 3,
     retryDelay: 750,
     timeout: 4_000,
   }),
