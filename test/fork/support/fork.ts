@@ -16,13 +16,14 @@ import { robinhood } from "viem/chains";
 import { afterEach, beforeEach, inject } from "vitest";
 
 import { parseDeployment } from "@/lib/deployment";
-import { marketAbi } from "@/lib/onchain/contracts";
+import { marketAbi, type PoolKey } from "@/lib/onchain/contracts";
 import type { Clients, MarketRefs, ReadClient } from "@/lib/onchain/reads";
 
-import { deployer, guardian, POSITION_MANAGER, USDG, userKey } from "./constants";
+import { POSITION_MANAGER, TWAP_RECORDER, USDG, userKey } from "./constants";
 
-/** What the harness deployed, read the way the app reads a manifest. */
-export const deployment = parseDeployment(JSON.parse(inject("manifest")));
+/** Farmenta as deployed on the chain, read the way the app reads a manifest. */
+const manifest = JSON.parse(inject("manifest")) as { guardian: Address };
+export const deployment = parseDeployment(manifest);
 
 export const blueChip: MarketRefs = { ...deployment.markets["blue-chip"], policy: deployment.collateralPolicy };
 export const meme: MarketRefs = { ...deployment.markets.meme, policy: deployment.collateralPolicy };
@@ -45,8 +46,13 @@ const nft = parseAbi([
   "function modifyLiquidities(bytes unlockData, uint256 deadline) payable",
 ]);
 const ownerActions = parseAbi([
+  "function owner() view returns (address)",
   "function pause()",
   "function setFrozen(bytes32 poolId, bool frozen)",
+]);
+const recorder = parseAbi([
+  "function record((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) key)",
+  "function consult(bytes32 poolId) view returns (int24)",
 ]);
 
 /** Runs every test inside a snapshot, so each starts from the state the harness left. */
@@ -162,24 +168,55 @@ export async function emptyPosition({ walletClient }: Clients, tokenId: bigint) 
   );
 }
 
-/** Pauses a market as the guardian, who may do so at once; the owner's pause waits the timelock. */
+/**
+ * Pauses a market as the guardian, who may do so at once; the owner's pause waits the timelock.
+ * The guardian is the real one, from the manifest, impersonated.
+ */
 export async function pause(market: Address) {
-  const wallet = createWalletClient({ account: guardian, chain: robinhood, transport });
-  await mined(await wallet.writeContract({ address: market, abi: ownerActions, functionName: "pause" }));
+  const { guardian } = manifest;
+  await as(guardian, async () => {
+    await mined(await anvil.writeContract({ account: guardian, address: market, abi: ownerActions, functionName: "pause" }));
+  });
 }
 
-/** Freezes a pool as the policy's owner, which is the deployer until the timelock accepts it. */
+/** Freezes a pool as the policy's owner, whoever that is at the fork's block, impersonated. */
 export async function freeze(poolId: Hex) {
-  const wallet = createWalletClient({ account: deployer, chain: robinhood, transport });
+  const policy = deployment.collateralPolicy;
+  const owner = await publicClient.readContract({ address: policy, abi: ownerActions, functionName: "owner" });
+  await as(owner, async () => {
+    await mined(
+      await anvil.writeContract({
+        account: owner,
+        address: policy,
+        abi: ownerActions,
+        functionName: "setFrozen",
+        args: [poolId, true],
+      }),
+    );
+  });
+}
+
+/** Records a pool's price in `TwapRecorder`, as the keeper does every five minutes. Anyone may. */
+export async function recordPrice(key: PoolKey) {
+  const keeper = await newUser("price-recorder");
   await mined(
-    await wallet.writeContract({
-      address: deployment.collateralPolicy,
-      abi: ownerActions,
-      functionName: "setFrozen",
-      args: [poolId, true],
+    await keeper.clients.walletClient.writeContract({
+      address: TWAP_RECORDER,
+      abi: recorder,
+      functionName: "record",
+      args: [key],
     }),
   );
 }
+
+/** Whether the oracle has a 30-minute average for the pool right now: enough history, and a recent recording. */
+export const hasAveragePrice = (poolId: Hex) =>
+  publicClient
+    .readContract({ address: TWAP_RECORDER, abi: recorder, functionName: "consult", args: [poolId] })
+    .then(
+      () => true,
+      () => false,
+    );
 
 /** Lets `seconds` pass and mines a block, so interest has something to accrue over. */
 export async function wait(seconds: number) {

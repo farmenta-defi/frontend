@@ -14,7 +14,7 @@ import {
 import { feeLabel } from "@/lib/onchain/range";
 import { readPosition, type ReadClient } from "@/lib/onchain/reads";
 
-import { ETH_USDG, FORK_BLOCK, POSITION_MANAGER, POSITIONS, WETH_USDG } from "./support/constants";
+import { ETH_USDG, FORK_BLOCK, META_USDG, POSITION_MANAGER, POSITIONS } from "./support/constants";
 import {
   blueChip,
   dealUsdg,
@@ -64,25 +64,25 @@ describe("finding a wallet's positions", () => {
       const user = await newUser("holder");
       await givePosition(user.address, POSITIONS.ethUsdgInRange);
       await givePosition(user.address, POSITIONS.ethUsdgAboveRange);
-      await givePosition(user.address, POSITIONS.wethUsdgInRange);
+      await givePosition(user.address, POSITIONS.metaUsdgInRange);
 
       const found = await find(user.address);
 
       expect(found.map((position) => position.tokenId).sort()).toEqual(
-        [POSITIONS.ethUsdgInRange, POSITIONS.ethUsdgAboveRange, POSITIONS.wethUsdgInRange].sort(),
+        [POSITIONS.ethUsdgInRange, POSITIONS.ethUsdgAboveRange, POSITIONS.metaUsdgInRange].sort(),
       );
       expect(found.every((position) => position.place === "wallet" && position.tier === null)).toBe(true);
-      // The ETH/USDG page lists its two and not the WETH/USDG one.
+      // The ETH/USDG page lists its two and not the META/USDG one.
       expect(inPool(found, ETH_USDG.id).map((position) => position.tokenId).sort()).toEqual(
         [POSITIONS.ethUsdgInRange, POSITIONS.ethUsdgAboveRange].sort(),
       );
-      expect(inPool(found, WETH_USDG.id).map((position) => position.tokenId)).toEqual([POSITIONS.wethUsdgInRange]);
+      expect(inPool(found, META_USDG.id).map((position) => position.tokenId)).toEqual([POSITIONS.metaUsdgInRange]);
     });
 
     it("a deposited position is listed as collateral of the market that holds it", async () => {
       const user = await newUser("holder");
       await givePosition(user.address, POSITIONS.ethUsdgInRange);
-      await givePosition(user.address, POSITIONS.wethUsdgInRange);
+      await givePosition(user.address, POSITIONS.metaUsdgInRange);
       await depositCollateral(user.clients, blueChip, POSITIONS.ethUsdgInRange);
 
       const found = await find(user.address);
@@ -92,7 +92,7 @@ describe("finding a wallet's positions", () => {
         tier: "blue-chip",
         poolId: ETH_USDG.id,
       });
-      expect(found.find((position) => position.tokenId === POSITIONS.wethUsdgInRange)).toMatchObject({
+      expect(found.find((position) => position.tokenId === POSITIONS.metaUsdgInRange)).toMatchObject({
         place: "wallet",
         tier: null,
       });
@@ -110,11 +110,12 @@ describe("finding a wallet's positions", () => {
       const inRange = await readPosition(publicClient, blueChip, POSITIONS.ethUsdgInRange, user.address);
       const above = await readPosition(publicClient, blueChip, POSITIONS.ethUsdgAboveRange, user.address);
 
-      expect(feeLabel(found.poolKey.fee)).toBe("0.046%");
+      // The listed ETH/USDG pool's hook sets the fee of each swap.
+      expect(feeLabel(found.poolKey.fee)).toBe("Dynamic fee");
       expect(inRange.ticks).toEqual({ tickLower: found.tickLower, tickUpper: found.tickUpper });
       expect(inRange.ticks!.tickLower).toBeLessThan(inRange.ticks!.tickUpper);
       expect(inRange.decimals).toEqual([18, 6]);
-      // Fixtures.sol: in range, so it holds both tokens; the other is above range and holds only USDG.
+      // In range, so it holds both tokens; the other is above its range and holds only USDG.
       expect(inRange.holdings!.amount0).toBeGreaterThan(0n);
       expect(inRange.holdings!.amount1).toBeGreaterThan(0n);
       expect(above.holdings!.amount0).toBe(0n);
@@ -159,7 +160,7 @@ describe("finding a wallet's positions", () => {
     it("reports the failure when only PositionManager's logs cannot be read", async () => {
       const user = await newUser("holder");
       await givePosition(user.address, POSITIONS.ethUsdgInRange);
-      await givePosition(user.address, POSITIONS.wethUsdgInRange);
+      await givePosition(user.address, POSITIONS.metaUsdgInRange);
       await depositCollateral(user.clients, blueChip, POSITIONS.ethUsdgInRange);
       const logs = logsFailingFor(POSITION_MANAGER);
 
@@ -183,7 +184,7 @@ describe("finding a wallet's positions", () => {
     it("a wallet whose positions are all in other pools gets the empty state on this pool's page", async () => {
       const user = await newUser("holder");
       await givePosition(user.address, POSITIONS.unlistedPool);
-      await givePosition(user.address, POSITIONS.wethUsdgInRange);
+      await givePosition(user.address, POSITIONS.metaUsdgInRange);
 
       const found = await find(user.address);
 
@@ -243,13 +244,13 @@ describe("finding a wallet's positions", () => {
       const user = await newUser("holder");
       // Given oldest id last, so the order of arrival is not the order of the list.
       await givePosition(user.address, POSITIONS.ethUsdgInRange);
-      await givePosition(user.address, POSITIONS.wethUsdgInRange);
+      await givePosition(user.address, POSITIONS.metaUsdgInRange);
       await givePosition(user.address, POSITIONS.ethUsdgAboveRange);
 
       expect(idsOf(await find(user.address))).toEqual([
-        POSITIONS.ethUsdgInRange, // 1,768,881
-        POSITIONS.ethUsdgAboveRange, // 1,621,020
-        POSITIONS.wethUsdgInRange, // 999,597
+        POSITIONS.ethUsdgInRange, // 3,402,463
+        POSITIONS.ethUsdgAboveRange, // 3,370,167
+        POSITIONS.metaUsdgInRange, // 3,150,520
       ]);
     });
 

@@ -34,7 +34,7 @@ const HOUR = 3_600n;
 const { market } = blueChip;
 const LOAN = POSITIONS.ethUsdgInRange;
 const SPARE = POSITIONS.ethUsdgAboveRange;
-const FRESH = POSITIONS.wethUsdgInRange;
+const FRESH = POSITIONS.metaUsdgInRange;
 
 type Call = { address: Address; abi: Abi; functionName: string; args: readonly unknown[] };
 

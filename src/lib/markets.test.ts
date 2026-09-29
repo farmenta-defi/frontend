@@ -1,6 +1,7 @@
 import { isAddress, zeroAddress } from "viem";
 import { describe, expect, it } from "vitest";
 
+import * as fork from "../../scripts/fork.mjs";
 import { COLLATERAL_POOLS, findPool, MARKETS, poolById, poolHref, USDG, type CollateralPool } from "./markets";
 import { poolIdOf, type PoolKey } from "./onchain/contracts";
 
@@ -220,6 +221,35 @@ describe("the listed pools", () => {
       const stocks = COLLATERAL_POOLS.filter((pool) => pool.feedHours === "us-stock-market").map((pool) => pool.pair);
 
       expect(stocks).toEqual(["META/USDG", "NVDA/USDG"]);
+    });
+  });
+});
+
+describe("the fork", () => {
+  describe("positive", () => {
+    it("lists only pools the app has a page for, under the same PoolKey", () => {
+      expect(fork.LISTED_POOLS.map((pool: { id: string }) => pool.id)).toEqual(COLLATERAL_POOLS.map((pool) => pool.poolId));
+      for (const listed of fork.LISTED_POOLS) {
+        const pool = poolById(listed.id as `0x${string}`);
+        expect(pool, listed.id).not.toBeNull();
+        expect(pool!.key, listed.id).toEqual(listed.key);
+      }
+    });
+  });
+
+  describe("negative", () => {
+    it("lists none of the pools that were removed", () => {
+      for (const removed of REMOVED) {
+        expect(fork.LISTED_POOLS.some((pool: { id: string }) => same(pool.id, removed.poolId)), removed.pair).toBe(false);
+      }
+    });
+  });
+
+  describe("edge case", () => {
+    it("has every pool's id as the hash of the key it lists it under", () => {
+      for (const listed of fork.LISTED_POOLS) {
+        expect(poolIdOf(listed.key as PoolKey), listed.id).toBe(listed.id);
+      }
     });
   });
 });

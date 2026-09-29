@@ -43,10 +43,10 @@ import {
 const USDG = 1_000_000n;
 const { market } = blueChip;
 
-/** Three positions of the listed ETH/USDG and WETH/USDG pools, one per role below. */
+/** Three positions of the listed ETH/USDG and META/USDG pools, one per role below. */
 const INDEBTED = POSITIONS.ethUsdgInRange;
 const DEBT_FREE = POSITIONS.ethUsdgAboveRange;
-const IN_WALLET = POSITIONS.wethUsdgInRange;
+const IN_WALLET = POSITIONS.metaUsdgInRange;
 
 async function refusal(action: Promise<unknown>) {
   const error = await action.then(
@@ -207,7 +207,7 @@ describe("a frozen pool", () => {
       const { borrower } = await marketInUse();
       await freeze(ETH_USDG.id);
 
-      // IN_WALLET is a WETH/USDG position; only ETH/USDG was frozen.
+      // IN_WALLET is a META/USDG position; only ETH/USDG was frozen.
       expect(depositCollateralGate(await position(IN_WALLET, borrower.address))).toEqual({ ok: true });
       await depositCollateral(borrower.clients, blueChip, IN_WALLET);
       await borrow(borrower.clients, blueChip, IN_WALLET, 20n * USDG);

@@ -41,8 +41,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# smart-contract checkout used by `pnpm abi:sync` and the fork tests
+# smart-contract checkout used by `pnpm abi:sync`
 /.cache/
-
-# written by `pnpm test:fork` from its rehearsal deploy
-/deployments/fork.json
