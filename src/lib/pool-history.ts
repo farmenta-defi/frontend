@@ -32,7 +32,8 @@ const STEPS_PER_DAY = 4;
 const STEPS = STEPS_PER_DAY * 365;
 const LAST_STEP_AT = Math.floor(MOCK_AS_OF / STEP_MS) * STEP_MS;
 
-export type SeriesPoint = { t: number; v: number };
+export type { SeriesPoint } from "@/components/app/time-series-chart";
+import type { SeriesPoint } from "@/components/app/time-series-chart";
 
 export type HistoryRange = "1w" | "1m" | "3m" | "1y";
 
