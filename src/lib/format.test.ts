@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { compactParts, compactTick, fmtCompactUsdg, fmtPct, fmtUsd, fmtUsdExact, fmtUsdg, NO_FIGURE, orDash, shortAddress } from "./format";
+import {
+  compactParts,
+  compactTick,
+  fmtAmount,
+  fmtCompactUsdg,
+  fmtPct,
+  fmtUsd,
+  fmtUsdExact,
+  fmtUsdg,
+  NO_FIGURE,
+  orDash,
+  shortAddress,
+} from "./format";
 
 describe("format", () => {
   describe("positive", () => {
@@ -35,6 +47,14 @@ describe("format", () => {
       expect(orDash(0, fmtCompactUsdg)).toBe("0.00 USDG");
       expect(compactParts(0)).toEqual({ figure: "0.00", unit: "" });
       expect(compactTick(0)).toBe("0");
+    });
+
+    it("writes a token amount with the digits its size calls for", () => {
+      expect(fmtAmount(604_610.492)).toBe("604,610");
+      expect(fmtAmount(1.372749240445278)).toBe("1.3727");
+      expect(fmtAmount(0.243723219459019)).toBe("0.2437");
+      expect(fmtAmount(0.00001234567)).toBe("0.00001235");
+      expect(fmtAmount(0)).toBe("0");
     });
 
     it("gives an amount under a thousand no magnitude", () => {

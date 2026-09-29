@@ -23,6 +23,18 @@ export const fmtUsdg = (n: number) => n.toLocaleString("en-US", { maximumFractio
 export const fmtPct = (n: number) => `${n.toFixed(2)}%`;
 
 /**
+ * An amount of a token, with the digits its size calls for: "604,610" of a
+ * token worth cents, "1.3727" of a stock, "0.2437" of ETH, "0.00001234" of
+ * what is left of a position.
+ */
+export const fmtAmount = (n: number) => {
+  if (n === 0) return "0";
+  if (n >= 1_000) return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
+  return n.toLocaleString("en-US", { maximumSignificantDigits: 4 });
+};
+
+/**
  * "4.10" + "K", split so a headline can set the magnitude back a shade
  * instead of shouting it at the same weight as the digits. An amount under a
  * thousand carries no magnitude: an empty market reads "0.00", not "0.00K".

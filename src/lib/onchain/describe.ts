@@ -1,3 +1,5 @@
+import { formatUnits } from "viem";
+
 import { wadToNumber } from "@/lib/units";
 
 import { feeLabel, priceRange, rangeLabel } from "./range";
@@ -16,7 +18,28 @@ export type PositionDescription = {
   inRange: boolean | null;
   /** USD. Absent when the position could not be valued. */
   valueUsd: number | null;
+  /**
+   * What the position holds, in whole tokens: of USDG, and of the token
+   * paired with it. Told apart by address, because USDG is currency0 in some
+   * pools and currency1 in others. Absent when the position could not be
+   * valued, or when neither currency is USDG.
+   */
+  amounts: { base: number; usdg: number } | null;
 };
+
+/** The pool's two amounts as the pair names them: the other token first, USDG second. */
+function amountsOf(position: PositionState): PositionDescription["amounts"] {
+  const { poolKey, holdings, decimals } = position;
+  if (!poolKey || !holdings || !decimals) return null;
+
+  const usdg = position.asset.toLowerCase();
+  const usdgIsCurrency0 = poolKey.currency0.toLowerCase() === usdg;
+  if (!usdgIsCurrency0 && poolKey.currency1.toLowerCase() !== usdg) return null;
+
+  const amount0 = Number(formatUnits(holdings.amount0, decimals[0]));
+  const amount1 = Number(formatUnits(holdings.amount1, decimals[1]));
+  return usdgIsCurrency0 ? { base: amount1, usdg: amount0 } : { base: amount0, usdg: amount1 };
+}
 
 export function describePosition(position: PositionState): PositionDescription {
   const range =
@@ -43,5 +66,6 @@ export function describePosition(position: PositionState): PositionDescription {
     range: range === null ? null : range === "Full range" ? range : `${range} USDG`,
     inRange,
     valueUsd,
+    amounts: amountsOf(position),
   };
 }
