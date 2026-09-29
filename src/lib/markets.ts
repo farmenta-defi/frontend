@@ -1,66 +1,41 @@
 /**
- * Market and pool domain model with mock data. The market UI reads only from
- * these exports, so swapping to the backend later is a data-layer change
- * (FAR-71); the components stay untouched.
+ * The two markets and the pools listed in them: what each one is, not what
+ * it holds.
  *
- * Risk parameters come from ./risk-params (single source, spec §6.2);
- * only the market activity numbers (APY, utilization, TVL) are mock here.
- * Nothing about a wallet is: balances, positions and loans are read from the
- * chain (./onchain).
+ * Every figure a page shows (APY, utilisation, TVL, a pool's terms, its debt)
+ * is read from the backend (`./backend`), and everything about a wallet from
+ * the chain (`./onchain`). What is written here is identity: a pool's id, the
+ * `PoolKey` it is the hash of, and the name it goes by. The backend cannot
+ * name a pool's tokens yet, because all six pools were created before the
+ * indexer's first block (FAR-82); when it can, this list moves there.
  */
 
-import { RISK_PARAMS, type MarketTier } from "./risk-params";
+import type { Address, Hex } from "viem";
+
+import type { PoolKey } from "./onchain/contracts";
+import type { MarketTier } from "./risk-params";
 
 export type Market = {
   id: MarketTier;
   name: string;
+  /** The tokens whose pools are listed, as a line of text. */
   collateral: string;
   /** One line on who the market is for, shown under the market name. */
   description: string;
-  supplyApy: number; // % (mock until contracts are live)
-  borrowApr: number; // % (mock)
-  utilization: number; // % (mock)
-  tvlUsd: number; // mock
-  maxLtv: number; // 0..1, from RISK_PARAMS
-  liqThreshold: number; // 0..1, from RISK_PARAMS
-  liquidatorBonus: number; // 0..1, from RISK_PARAMS
-  reserveFactor: number; // %, from RISK_PARAMS
-  oracle: "CHAINLINK" | "TWAP"; // from RISK_PARAMS
 };
-
-const bc = RISK_PARAMS["blue-chip"];
-const meme = RISK_PARAMS.meme;
 
 export const MARKETS: Market[] = [
   {
     id: "blue-chip",
     name: "Blue chip",
-    collateral: "ETH · WETH · cbBTC · NVDA, against USDG",
+    collateral: "ETH · META · NVDA, against USDG",
     description: "Chainlink-priced majors and tokenised equity, with conservative parameters.",
-    supplyApy: 4.2,
-    borrowApr: 6.1,
-    utilization: 62,
-    tvlUsd: 1_240_000,
-    maxLtv: bc.maxLtv,
-    liqThreshold: bc.liqThreshold,
-    liquidatorBonus: bc.liquidatorBonus,
-    reserveFactor: bc.reserveFactorPct,
-    oracle: bc.oracle,
   },
   {
     id: "meme",
     name: "Meme",
-    collateral: "PONS · PENGU · AI · MEME, against USDG (allowlisted)",
+    collateral: "CASHCAT · PONS · AI, against USDG (allowlisted)",
     description: "TWAP-priced allowlisted meme collateral with tighter limits.",
-    supplyApy: 9.8,
-    borrowApr: 14.3,
-    utilization: 71,
-    tvlUsd: 342_000,
-    maxLtv: meme.maxLtv,
-    liqThreshold: meme.liqThreshold,
-    liquidatorBonus: meme.liquidatorBonus,
-    reserveFactor: meme.reserveFactorPct,
-    oracle: meme.oracle,
   },
 ];
 
@@ -70,138 +45,149 @@ export const NETWORKS: Record<NetworkId, { name: string; chainId: number }> = {
   robinhood: { name: "Robinhood Chain", chainId: 4663 },
 };
 
+/** USDG on Robinhood Chain, 6 decimals (docs ARCHITECTURE.md §18). Every listed pool pairs a token with it. */
+export const USDG: Address = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
+
+/** Native ETH, which has no contract: Uniswap v4 writes it as the zero address. */
+const NATIVE: Address = "0x0000000000000000000000000000000000000000";
+const NO_HOOK: Address = "0x0000000000000000000000000000000000000000";
+/** Uniswap v4's mark, in `fee`, for a pool whose hook sets the swap fee. */
+const DYNAMIC_FEE = 0x800000;
+
 /**
  * One listed collateral pool: the unit the market table lists and the detail
  * route addresses. A pool belongs to exactly one tier, which is the market its
  * lenders share (spec §1 no. 8 — two isolated markets, many pools inside each).
  */
 export type CollateralPool = {
-  /**
-   * Uniswap v4 poolId, keccak256 of the PoolKey. ETH/USDG and WETH/USDG carry
-   * the ids of real pools (docs ARCHITECTURE.md §18: no hook, fee 460 and fee
-   * 200), the two `pnpm fork` lists, so their pages act on real positions. The
-   * rest are placeholders. Which pools are listed comes from the backend (FAR-71).
-   */
-  poolId: `0x${string}`;
+  /** Uniswap v4 poolId: keccak256 of `key`, which a test holds it to. */
+  poolId: Hex;
   /** Lowercased pair, the last URL segment. Readable half of the address. */
   slug: string;
   network: NetworkId;
   tier: MarketTier;
-  /** "BASE/QUOTE", the form AssetPair reads. */
+  /**
+   * "BASE/USDG", the form AssetPair reads. USDG is named second whichever
+   * side of the pool it is on: a pool orders its currencies by address, and
+   * USDG is currency0 in META/USDG and NVDA/USDG.
+   */
   pair: string;
   /** What prices the risky side. */
   trustedBy: string;
-  borrowAprPct: number;
-  rate6hPct: number;
-  totalBorrowUsd: number;
-  liquidityUsd: number;
-  marketSizeUsd: number;
+  /** The pool as Uniswap v4 identifies it (docs ARCHITECTURE.md §18.1). */
+  key: PoolKey;
+  /** The token paired with USDG. */
+  base: { symbol: string; decimals: number };
+  /**
+   * When the base token's price feed moves. A stock's feed follows the US
+   * stock market, five days a week, and the oracle refuses a price older than
+   * 25 hours: over a weekend the pool cannot lend or let indebted collateral go.
+   */
+  feedHours: "always" | "us-stock-market";
 };
 
 export const COLLATERAL_POOLS: CollateralPool[] = [
   {
-    poolId: "0x54f7883914619af9105355bf83ed678bcf9f63560218ac61c9963b9503d0ba32",
+    poolId: "0xbac3aa3b91584a53a579b3c999a56756e954e59247e497bad1d25a4334bde551",
     slug: "eth-usdg",
     network: "robinhood",
     tier: "blue-chip",
     pair: "ETH/USDG",
     trustedBy: "Chainlink",
-    borrowAprPct: 6.1,
-    rate6hPct: 4.2,
-    totalBorrowUsd: 312_400,
-    liquidityUsd: 1_240_000,
-    marketSizeUsd: 1_240_000,
+    key: {
+      currency0: NATIVE,
+      currency1: USDG,
+      fee: DYNAMIC_FEE,
+      tickSpacing: 10,
+      hooks: "0x06a889870C8f83640D6816319f72e2aA579b6080",
+    },
+    base: { symbol: "ETH", decimals: 18 },
+    feedHours: "always",
   },
   {
-    poolId: "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
-    slug: "weth-usdg",
+    poolId: "0x5875d407a42965b0e768c8925cea290e06fa50603ef34fc99eb92a1050e6ae36",
+    slug: "meta-usdg",
     network: "robinhood",
     tier: "blue-chip",
-    pair: "WETH/USDG",
+    pair: "META/USDG",
     trustedBy: "Chainlink",
-    borrowAprPct: 6.1,
-    rate6hPct: 4.2,
-    totalBorrowUsd: 198_200,
-    liquidityUsd: 820_000,
-    marketSizeUsd: 820_000,
+    key: {
+      currency0: USDG,
+      currency1: "0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35",
+      fee: 3000,
+      tickSpacing: 60,
+      hooks: NO_HOOK,
+    },
+    base: { symbol: "META", decimals: 18 },
+    feedHours: "us-stock-market",
   },
   {
-    poolId: "0x2ad6f81c05b3e7490fa61d84c93b072e5f8ac41d60e93b27a4c8150fd3e6b719",
-    slug: "cbbtc-usdg",
-    network: "robinhood",
-    tier: "blue-chip",
-    pair: "cbBTC/USDG",
-    trustedBy: "Chainlink",
-    borrowAprPct: 5.9,
-    rate6hPct: 4.0,
-    totalBorrowUsd: 78_400,
-    liquidityUsd: 910_000,
-    marketSizeUsd: 910_000,
-  },
-  {
-    poolId: "0x8e40b7d29fa1c6350b82e5947dc016af3b95206ec7418d3fa0629bd5417ce082",
+    poolId: "0x6444a8e0b267406a15db74ca00c4a24bdfa81ed3180f5b6d0851f8ed6f4f29c5",
     slug: "nvda-usdg",
     network: "robinhood",
     tier: "blue-chip",
     pair: "NVDA/USDG",
     trustedBy: "Chainlink",
-    borrowAprPct: 6.8,
-    rate6hPct: 4.6,
-    totalBorrowUsd: 48_600,
-    liquidityUsd: 640_000,
-    marketSizeUsd: 640_000,
+    key: {
+      currency0: USDG,
+      currency1: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+      fee: 100,
+      tickSpacing: 1,
+      hooks: NO_HOOK,
+    },
+    base: { symbol: "NVDA", decimals: 18 },
+    feedHours: "us-stock-market",
   },
   {
-    poolId: "0xc7e1a4938b025f6d3ca9017e4b82df5610a3c94e7f2b8d05619ae37c2d840bf1",
+    poolId: "0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b",
+    slug: "cashcat-usdg",
+    network: "robinhood",
+    tier: "meme",
+    pair: "CASHCAT/USDG",
+    trustedBy: "30m TWAP",
+    key: {
+      currency0: "0x020bfC650A365f8BB26819deAAbF3E21291018b4",
+      currency1: USDG,
+      fee: 2690,
+      tickSpacing: 54,
+      hooks: NO_HOOK,
+    },
+    base: { symbol: "CASHCAT", decimals: 18 },
+    feedHours: "always",
+  },
+  {
+    poolId: "0x486435a1f76cd58193f854c6e6213cd05fd58d637865d02065ff558b387fa6ea",
     slug: "pons-usdg",
     network: "robinhood",
     tier: "meme",
     pair: "PONS/USDG",
     trustedBy: "30m TWAP",
-    borrowAprPct: 14.3,
-    rate6hPct: 9.8,
-    totalBorrowUsd: 24_300,
-    liquidityUsd: 342_000,
-    marketSizeUsd: 342_000,
+    key: {
+      currency0: "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+      currency1: USDG,
+      fee: DYNAMIC_FEE,
+      tickSpacing: 60,
+      hooks: "0x08E52564Bad99E05a694b4809F397edcA417A080",
+    },
+    base: { symbol: "PONS", decimals: 18 },
+    feedHours: "always",
   },
   {
-    poolId: "0x5b31e7a04c986d2fb8570ae3149cd026f7b8a41e93052dc6187fa3b40c9e2751",
-    slug: "pengu-usdg",
-    network: "robinhood",
-    tier: "meme",
-    pair: "PENGU/USDG",
-    trustedBy: "30m TWAP",
-    borrowAprPct: 15.6,
-    rate6hPct: 10.4,
-    totalBorrowUsd: 8_400,
-    liquidityUsd: 180_000,
-    marketSizeUsd: 180_000,
-  },
-  {
-    poolId: "0xa14c930e6bd25f871034ae9c2f60b3d8517e0946cb28d4f7350a1eb63c82d947",
+    poolId: "0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995",
     slug: "ai-usdg",
     network: "robinhood",
     tier: "meme",
     pair: "AI/USDG",
     trustedBy: "30m TWAP",
-    borrowAprPct: 17.2,
-    rate6hPct: 11.5,
-    totalBorrowUsd: 3_100,
-    liquidityUsd: 74_000,
-    marketSizeUsd: 74_000,
-  },
-  {
-    poolId: "0xd06b2f9143ae785c02b64d1930fa8e57c41b06d2937fe58a10c4b73e6a92d015",
-    slug: "meme-usdg",
-    network: "robinhood",
-    tier: "meme",
-    pair: "MEME/USDG",
-    trustedBy: "30m TWAP",
-    borrowAprPct: 16.4,
-    rate6hPct: 10.9,
-    totalBorrowUsd: 4_100,
-    liquidityUsd: 96_000,
-    marketSizeUsd: 96_000,
+    key: {
+      currency0: "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18",
+      currency1: USDG,
+      fee: 2300,
+      tickSpacing: 23,
+      hooks: NO_HOOK,
+    },
+    base: { symbol: "AI", decimals: 18 },
+    feedHours: "always",
   },
 ];
 
@@ -223,22 +209,6 @@ export const findPool = (network: string, tier: string, poolId: string, slug: st
       pool.poolId.toLowerCase() === poolId.toLowerCase(),
   ) ?? null;
 
-const compact = (n: number) => {
-  const millions = n >= 1_000_000;
-  return { figure: (n / (millions ? 1_000_000 : 1_000)).toFixed(2), unit: millions ? "M" : "K" };
-};
-
-/** "$312.40K USDG" / "$1.24M USDG", the density the market table reads at. */
-export const fmtCompactUsdg = (n: number) => {
-  const { figure, unit } = compact(n);
-  return `$${figure}${unit} USDG`;
-};
-
-/**
- * The same number split at the magnitude, so a headline figure can set its
- * "K"/"M" back a shade instead of shouting it at the same weight as the digits.
- */
-export const compactUsdgParts = (n: number) => {
-  const { figure, unit } = compact(n);
-  return { value: `$${figure}`, unit, inToken: `${figure}${unit} USDG` };
-};
+/** The pool with this id, when the app has a page for it. */
+export const poolById = (poolId: Hex | null | undefined) =>
+  (poolId && COLLATERAL_POOLS.find((pool) => pool.poolId.toLowerCase() === poolId.toLowerCase())) || null;

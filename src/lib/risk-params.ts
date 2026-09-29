@@ -20,6 +20,16 @@
  * bounds**. Each listed pool stores its own parameters, and the contract
  * only accepts deviations that are stricter: lower maxLTV and LT, higher
  * liquidator bonus, smaller caps, larger minimum position.
+ *
+ * So a pool's page does not show `maxLtv`, `liqThreshold`, `liquidatorBonus`,
+ * the pool's debt cap or the minimum position from here: those are the
+ * pool's own and come from the backend (FAR-80). META/USDG and NVDA/USDG lend
+ * at 50% and 65%, not at the blue-chip 65% and 75%. What a page reads from
+ * here is what belongs to the market: the close factor, the market's debt
+ * cap, the reserve factor and floor, and the rate model.
+ *
+ * Blue chip is priced by Chainlink alone. The Pyth cross-check of v0.9 was
+ * removed from the contracts (spec v0.70).
  */
 
 export type MarketTier = "blue-chip" | "meme";
@@ -60,7 +70,7 @@ export const RISK_PARAMS: Record<MarketTier, RiskParams> = {
     minPositionUsd: 50,
     spotRuleAtBorrow: "spot within ±2% of oracle",
     feeCapPctOfPrincipal: 10,
-    priceSource: "Chainlink (Pyth cross-check when fresh)",
+    priceSource: "Chainlink",
     oracle: "CHAINLINK",
     reserveFactorPct: 15,
     reserveFloorPct: 1,
