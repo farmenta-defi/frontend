@@ -4,16 +4,18 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
 import { ActionButton, ActionNote } from "@/components/app/action-controls";
-import { RangeLine } from "@/components/app/position-picker";
+import { HoldingsLine, RangeLine } from "@/components/app/position-picker";
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { sanitizeAmount } from "@/components/ui/field";
 import { hfLabel, hfTone } from "@/components/ui/health-bar";
-import { COLLATERAL_POOLS, fmtUsd, fmtUsdg, MARKETS, poolHref } from "@/lib/markets";
+import { fmtUsd, fmtUsdg } from "@/lib/format";
+import { COLLATERAL_POOLS, MARKETS, poolById, poolHref } from "@/lib/markets";
 import { repay, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
 import { samePool } from "@/lib/onchain/contracts";
 import { describePosition } from "@/lib/onchain/describe";
+import { explainForPool } from "@/lib/onchain/errors";
 import { listState, unreadNote } from "@/lib/onchain/list-status";
 import { repayGate, withdrawCollateralGate, withdrawGate, type Gate } from "@/lib/onchain/gates";
 import { useAction, useLenderState, usePositions, useSession, useWalletPositions } from "@/lib/onchain/hooks";
@@ -177,8 +179,7 @@ export function SupplyPosition({ tier }: { tier: MarketTier }) {
 }
 
 /** The pool a position belongs to, when the app lists it. */
-const poolOf = (position: PositionState) =>
-  COLLATERAL_POOLS.find((pool) => position.poolId !== null && samePool(pool.poolId, position.poolId)) ?? null;
+const poolOf = (position: PositionState) => poolById(position.poolId);
 
 function BorrowPosition({ tier, position }: { tier: MarketTier; position: PositionState }) {
   const session = useSession();
@@ -210,6 +211,11 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
             <p className="text-[12px] text-steel-400">
               <RangeLine position={position} />
             </p>
+            {position.holdings && (
+              <p className="text-[12px] text-steel-400">
+                <HoldingsLine position={position} />
+              </p>
+            )}
             <p className="text-[12px] text-steel-500">
               {marketName(tier)} market · <span className="font-mono">#{position.tokenId.toString()}</span>
             </p>
@@ -259,7 +265,10 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
       </div>
       {position.riskError && (
         <p className="mt-3 text-[12px] leading-[18px] text-warn">
-          {position.riskError.message} Repaying and withdrawing do not need a price.
+          {explainForPool(position.riskError, pool).message}{" "}
+          {position.debt > 0n
+            ? "Repaying does not need a price."
+            : "Withdrawing collateral that owes nothing does not need a price."}
         </p>
       )}
 
@@ -306,6 +315,9 @@ function WalletPosition({ position }: { position: PositionState }) {
           </p>
           <p className="text-[12px] text-steel-400">
             <RangeLine position={position} />
+          </p>
+          <p className="text-[12px] text-steel-400">
+            <HoldingsLine position={position} />
           </p>
           <p className="text-[12px] text-steel-500">
             In your wallet, not deposited · <span className="font-mono">#{position.tokenId.toString()}</span>

@@ -22,6 +22,7 @@ const position = (over: Partial<PositionState> = {}): PositionState => ({
   ticks: null,
   decimals: null,
   holdings: null,
+  holdingsError: null,
   pool: { status: "open", terms: { maxLtvBps: 6500, ltBps: 7500 } },
   paused: false,
   debt: 0n,

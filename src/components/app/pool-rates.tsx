@@ -3,16 +3,16 @@
 import { ChartNoAxesColumn, Info } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { Unavailable } from "@/components/app/pool-market-chart";
 import { TimeSeriesChart } from "@/components/app/time-series-chart";
 import { Segmented } from "@/components/ui/segmented";
 import { SelectMenu } from "@/components/ui/select-menu";
+import { HISTORY_RANGES, type HistoryRange } from "@/lib/backend/figures";
+import { useMarket, usePoolFigures } from "@/lib/backend/hooks";
+import { rateSeries, rateSummary, type RateSide } from "@/lib/backend/series";
+import { fmtPct, NO_FIGURE, orDash } from "@/lib/format";
 import type { CollateralPool } from "@/lib/markets";
-import {
-  HISTORY_RANGES,
-  poolRateHistory,
-  type HistoryRange,
-  type RateSide,
-} from "@/lib/pool-history";
+import { cn } from "@/lib/utils";
 
 const SIDES = [
   { id: "borrow", label: "Borrow" },
@@ -22,7 +22,7 @@ const SIDES = [
 const COPY: Record<RateSide, { title: string; hint: string }> = {
   borrow: {
     title: "Borrow rate (6h)",
-    hint: "Annualised cost of borrowing from this pool, averaged over the last six hours.",
+    hint: "Annualised cost of borrowing from this pool's market, averaged over the last six hours. Every pool in the market shares it.",
   },
   supply: {
     title: "Supply rate (6h)",
@@ -30,34 +30,30 @@ const COPY: Record<RateSide, { title: string; hint: string }> = {
   },
 };
 
-const pct = (value: number) => `${value.toFixed(2)}%`;
-
-function BreakdownRow({ label, value }: { label: string; value: number }) {
+function BreakdownRow({ label, value }: { label: string; value: number | null }) {
   return (
     <div className="flex items-center justify-between gap-4 py-2">
       <dt className="text-[13px] text-steel-400">{label}</dt>
-      <dd className="tnum text-[13px] font-medium text-foreground">{pct(value)}</dd>
+      <dd className="tnum text-[13px] font-medium text-foreground">{orDash(value, fmtPct)}</dd>
     </div>
   );
 }
 
-/** What borrowing costs and what supplying pays, now and over time. */
-export function PoolRates({
-  pool,
-  supplyApyPct,
-}: {
-  pool: CollateralPool;
-  /** Supplying is priced per market, so the page passes the market's figure in. */
-  supplyApyPct: number;
-}) {
+/** What borrowing costs and what supplying pays, now and over time, read from the backend. */
+export function PoolRates({ pool }: { pool: CollateralPool }) {
   const [side, setSide] = useState<RateSide>("borrow");
-  const [range, setRange] = useState<HistoryRange>("1m");
+  const [range, setRange] = useState<HistoryRange>("1w");
+  const figures = usePoolFigures(pool.poolId, range);
+  const lending = useMarket(pool.tier);
 
-  const history = useMemo(
-    () => poolRateHistory(pool, side, side === "borrow" ? pool.borrowAprPct : supplyApyPct, range),
-    [pool, side, supplyApyPct, range],
-  );
+  const points = useMemo(() => rateSeries(figures.data?.history ?? [], side), [figures.data, side]);
+  const summary = useMemo(() => rateSummary(points), [points]);
   const { title, hint } = COPY[side];
+
+  // The backend averages the borrow rate over six hours itself; the supply rate's is taken from the history.
+  const sixHours = side === "borrow" ? (figures.data?.rate6hPct ?? null) : summary.average6hPct;
+  const instant =
+    side === "borrow" ? (figures.data?.borrowAprPct ?? null) : (lending.data?.latest?.supplyApyPct ?? null);
 
   return (
     <div className="surface grid gap-6 p-5 sm:p-6 md:grid-cols-[minmax(0,1fr)_216px]">
@@ -80,9 +76,15 @@ export function PoolRates({
                 {hint}
               </span>
             </div>
-            <p className="font-display tnum mt-2 text-[30px] font-semibold leading-none text-foreground sm:text-[34px]">
-              {history.latestPct.toFixed(2)}
-              <span className="text-steel-500">%</span>
+            <p
+              className={cn(
+                "font-display tnum mt-2 text-[30px] font-semibold leading-none sm:text-[34px]",
+                sixHours === null ? "text-steel-500" : "text-foreground",
+                figures.status === "loading" && "animate-pulse",
+              )}
+            >
+              {sixHours === null ? NO_FIGURE : sixHours.toFixed(2)}
+              {sixHours !== null && <span className="text-steel-500">%</span>}
             </p>
           </div>
 
@@ -93,13 +95,21 @@ export function PoolRates({
         </div>
 
         <div className="mt-6">
-          <TimeSeriesChart
-            points={history.points}
-            label={title}
-            formatValue={pct}
-            formatTick={(value) => `${value}%`}
-            average={{ value: history.averagePct, label: `Avg ${pct(history.averagePct)}` }}
-          />
+          {figures.status === "failed" ? (
+            <Unavailable />
+          ) : (
+            <TimeSeriesChart
+              points={points}
+              label={title}
+              formatValue={fmtPct}
+              formatTick={(value) => `${value}%`}
+              average={
+                summary.averagePct === null
+                  ? undefined
+                  : { value: summary.averagePct, label: `Avg ${fmtPct(summary.averagePct)}` }
+              }
+            />
+          )}
         </div>
       </div>
 
@@ -111,12 +121,12 @@ export function PoolRates({
               <ChartNoAxesColumn className="size-4 text-steel-400" aria-hidden />
               Native rate
             </dt>
-            <dd className="tnum text-[13px] font-medium text-foreground">{pct(history.latestPct)}</dd>
+            <dd className="tnum text-[13px] font-medium text-foreground">{orDash(sixHours, fmtPct)}</dd>
           </div>
           <div className="pt-1.5">
-            <BreakdownRow label="Instant" value={history.instantPct} />
-            <BreakdownRow label="24h average" value={history.average24hPct} />
-            <BreakdownRow label="7D average" value={history.average7dPct} />
+            <BreakdownRow label="Instant" value={instant} />
+            <BreakdownRow label="24h average" value={summary.average24hPct} />
+            <BreakdownRow label="7D average" value={summary.average7dPct} />
           </div>
         </dl>
       </div>

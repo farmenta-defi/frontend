@@ -2,10 +2,15 @@ import { maxUint256 } from "viem";
 import { describe, expect, it } from "vitest";
 
 import {
+  bpsFieldToPct,
   bpsToFraction,
   formatUsdg,
   healthFactorToNumber,
+  parseBaseUnits,
   parseUsdg,
+  pctFieldToNumber,
+  usdFieldToNumber,
+  usdgFieldToNumber,
   usdgToNumber,
   wadToNumber,
 } from "./units";
@@ -85,6 +90,64 @@ describe("formatting", () => {
 
     it("reads a health factor of exactly one", () => {
       expect(healthFactorToNumber(1_000_000_000_000_000_000n)).toBe(1);
+    });
+  });
+});
+
+describe("the backend's fields", () => {
+  describe("positive", () => {
+    it("reads an amount in base units as the figure to show", () => {
+      expect(parseBaseUnits("25000000000")).toBe(25_000_000_000n);
+      expect(usdgFieldToNumber("25000000000")).toBe(25_000);
+      expect(usdgFieldToNumber("1250500000")).toBe(1_250.5);
+      expect(usdFieldToNumber("50000000000000000000")).toBe(50);
+    });
+
+    it("reads a percentage with two decimals, and basis points as a percentage", () => {
+      expect(pctFieldToNumber("6.10")).toBe(6.1);
+      expect(pctFieldToNumber("14.35")).toBe(14.35);
+      expect(bpsFieldToPct(6500)).toBe(65);
+      expect(bpsFieldToPct(610)).toBe(6.1);
+    });
+  });
+
+  describe("negative", () => {
+    it("has no figure for what is not a whole number of base units", () => {
+      for (const field of ["", "1.5", "-1", "1e6", "0x10", " 10", 10, 10n, undefined, {}]) {
+        expect(parseBaseUnits(field), String(field)).toBeNull();
+        expect(usdgFieldToNumber(field), String(field)).toBeNull();
+        expect(usdFieldToNumber(field), String(field)).toBeNull();
+      }
+    });
+
+    it("has no figure for what is not a percentage or basis points", () => {
+      for (const field of ["", "6", "6.1", "6.100", "-6.10", "abc", 6.1, undefined]) {
+        expect(pctFieldToNumber(field), String(field)).toBeNull();
+      }
+      for (const field of [-1, 65.5, Number.NaN, "6500", undefined]) {
+        expect(bpsFieldToPct(field), String(field)).toBeNull();
+      }
+    });
+  });
+
+  describe("edge case", () => {
+    it("keeps null as null: no figure yet is not a zero", () => {
+      expect(parseBaseUnits(null)).toBeNull();
+      expect(usdgFieldToNumber(null)).toBeNull();
+      expect(usdFieldToNumber(null)).toBeNull();
+      expect(pctFieldToNumber(null)).toBeNull();
+      expect(bpsFieldToPct(null)).toBeNull();
+    });
+
+    it("keeps a zero as a zero: an empty market is not a missing one", () => {
+      expect(usdgFieldToNumber("0")).toBe(0);
+      expect(usdFieldToNumber("0")).toBe(0);
+      expect(pctFieldToNumber("0.00")).toBe(0);
+      expect(bpsFieldToPct(0)).toBe(0);
+    });
+
+    it("reads an amount larger than a double holds exactly without losing the digits before it is shown", () => {
+      expect(parseBaseUnits("123456789012345678901234567890")).toBe(123456789012345678901234567890n);
     });
   });
 });

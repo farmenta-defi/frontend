@@ -1,4 +1,4 @@
-import { maxUint256, zeroAddress } from "viem";
+import { maxUint256, zeroAddress, type Address } from "viem";
 import { describe, expect, it } from "vitest";
 
 import { describePosition } from "./describe";
@@ -17,6 +17,7 @@ const inWallet = (over: Partial<PositionState> = {}): PositionState => ({
   ticks: { tickLower: -198_599, tickUpper: -197_699 },
   decimals: [18, 6],
   holdings: { amount0: 2n * 10n ** 17n, amount1: 500_000_000n, principalUsd: 1_000n * WAD, feesUsd: 25n * WAD },
+  holdingsError: null,
   pool: { status: "open", terms: { maxLtvBps: 6500, ltBps: 7500 } },
   paused: false,
   debt: 0n,
@@ -100,11 +101,124 @@ describe("describePosition", () => {
     it("has nothing to say about a token that does not exist", () => {
       const missing = inWallet({ place: "missing", poolId: null, poolKey: null, ticks: null, decimals: null, holdings: null });
 
-      expect(describePosition(missing)).toEqual({ fee: null, range: null, inRange: null, valueUsd: null });
+      expect(describePosition(missing)).toEqual({ fee: null, range: null, inRange: null, valueUsd: null, amounts: null });
     });
 
     it("writes a full range without prices", () => {
       expect(describePosition(inWallet({ ticks: { tickLower: -887_265, tickUpper: 887_265 } })).range).toBe("Full range");
+    });
+  });
+});
+
+/**
+ * What each side of a pool holds, over positions as the chain had them at
+ * block 75,422,200 (`test/fork/support/constants.ts`): the amounts are the
+ * valuer's and the ticks PositionManager's.
+ */
+describe("the amounts and the prices of a position, by the side USDG is on", () => {
+  const META: Address = "0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35";
+  const NVDA: Address = "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC";
+  const CASHCAT: Address = "0x020bfC650A365f8BB26819deAAbF3E21291018b4";
+
+  /** ETH/USDG 3,402,463: native ETH is currency0, USDG currency1. */
+  const eth = inWallet({
+    poolKey: { currency0: zeroAddress, currency1: USDG, fee: 0x800000, tickSpacing: 10, hooks: "0x06a889870C8f83640D6816319f72e2aA579b6080" },
+    ticks: { tickLower: -199_030, tickUpper: -196_040 },
+    decimals: [18, 6],
+    holdings: { amount0: 243_723_219_459_019_262n, amount1: 744_229_053n, principalUsd: 1_394n * WAD, feesUsd: 0n },
+  });
+  /** META/USDG 3,150,520: USDG is currency0. */
+  const meta = inWallet({
+    poolKey: { currency0: USDG, currency1: META, fee: 3000, tickSpacing: 60, hooks: zeroAddress },
+    ticks: { tickLower: 208_260, tickUpper: 211_620 },
+    decimals: [6, 18],
+    holdings: { amount0: 412_294_036n, amount1: 1_372_749_240_445_278_056n, principalUsd: 1_388n * WAD, feesUsd: 0n },
+  });
+  /** NVDA/USDG 3,387,125: USDG is currency0. */
+  const nvda = inWallet({
+    poolKey: { currency0: USDG, currency1: NVDA, fee: 100, tickSpacing: 1, hooks: zeroAddress },
+    ticks: { tickLower: 221_360, tickUpper: 222_407 },
+    decimals: [6, 18],
+    holdings: { amount0: 688_745_603n, amount1: 5_068_366_222_906_480_101n, principalUsd: 1_845n * WAD, feesUsd: 0n },
+  });
+  /** CASHCAT/USDG 3,400,223: USDG is currency1, and the token is worth cents. */
+  const cashcat = inWallet({
+    poolKey: { currency0: CASHCAT, currency1: USDG, fee: 2690, tickSpacing: 54, hooks: zeroAddress },
+    ticks: { tickLower: -295_974, tickUpper: -290_196 },
+    decimals: [18, 6],
+    holdings: { amount0: 6_496_291_265_759_436_928_863n, amount1: 672_443_789n, principalUsd: 1_796n * WAD, feesUsd: 0n },
+  });
+
+  describe("positive", () => {
+    it("reads the ETH of a native-ETH position in 18 decimals and its USDG in 6", () => {
+      const { amounts, range, fee } = describePosition(eth);
+
+      expect(amounts!.base).toBeCloseTo(0.243723219, 9);
+      expect(amounts!.usdg).toBe(744.229053);
+      expect(range).toBe("2,273.4 to 3,065.6 USDG");
+      expect(fee).toBe("Dynamic fee");
+    });
+
+    it("reads the amounts of a stock position the right way round, where USDG is currency0", () => {
+      const held = { meta: describePosition(meta).amounts!, nvda: describePosition(nvda).amounts! };
+
+      expect(held.meta.base).toBeCloseTo(1.372749240445, 12);
+      expect(held.meta.usdg).toBe(412.294036);
+      expect(held.nvda.base).toBeCloseTo(5.068366222906, 12);
+      expect(held.nvda.usdg).toBe(688.745603);
+    });
+
+    it("prices a stock in USDG, not USDG in the stock, where USDG is currency0", () => {
+      // META traded at about 713 USDG and NVDA at about 229 at that block.
+      expect(describePosition(meta).range).toBe("645.5 to 903.3 USDG");
+      expect(describePosition(nvda).range).toBe("219.5 to 243.7 USDG");
+      expect(describePosition(meta).fee).toBe("0.3%");
+      expect(describePosition(nvda).fee).toBe("0.01%");
+    });
+
+    it("prices a token worth cents in USDG", () => {
+      const { amounts, range } = describePosition(cashcat);
+
+      expect(amounts!.base).toBeCloseTo(6_496.291265759, 6);
+      expect(amounts!.usdg).toBe(672.443789);
+      expect(range).toBe("0.1402 to 0.2498 USDG");
+    });
+  });
+
+  describe("negative", () => {
+    it("does not take the first amount for the token and the second for USDG where they are the other way round", () => {
+      const { amounts } = describePosition(meta);
+
+      // Read as currency1 = USDG, this position would hold 412 META and a millionth of a millionth of a USDG.
+      expect(amounts!.base).not.toBeCloseTo(412.294036, 3);
+      expect(amounts!.usdg).toBeGreaterThan(400);
+    });
+
+    it("has no amounts for a position that could not be valued, or of a pool without USDG", () => {
+      expect(describePosition(inWallet({ holdings: null })).amounts).toBeNull();
+      const noUsdg = { ...meta, poolKey: { ...meta.poolKey!, currency0: NVDA } };
+      expect(describePosition(noUsdg).amounts).toBeNull();
+    });
+  });
+
+  describe("edge case", () => {
+    it("reads a position that holds only the token, or only USDG, on either side", () => {
+      // META/USDG 3,396,204, above its range in USDG terms: all META.
+      const allMeta = { ...meta, holdings: { amount0: 0n, amount1: 453_057_429_999_999_450n, principalUsd: 322n * WAD, feesUsd: 0n } };
+      // ETH/USDG 3,370,167, above its range: all USDG.
+      const allUsdg = { ...eth, holdings: { amount0: 0n, amount1: 199_999_999n, principalUsd: 199n * WAD, feesUsd: 0n } };
+
+      expect(describePosition(allMeta).amounts!.base).toBeCloseTo(0.45305743, 12);
+      expect(describePosition(allMeta).amounts!.usdg).toBe(0);
+      expect(describePosition(allUsdg).amounts).toEqual({ base: 0, usdg: 199.999999 });
+      expect(describePosition(allMeta).inRange).toBe(false);
+      expect(describePosition(allUsdg).inRange).toBe(false);
+    });
+
+    it("tells USDG by its address whatever the case it is written in", () => {
+      const lower = { ...meta, asset: USDG.toLowerCase() as `0x${string}` };
+
+      expect(describePosition(lower).amounts).toEqual(describePosition(meta).amounts);
     });
   });
 });

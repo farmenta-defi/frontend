@@ -19,7 +19,7 @@ import {
 import { readPosition } from "@/lib/onchain/reads";
 import { MIN_DEBT_USDG } from "@/lib/units";
 
-import { ETH_USDG, POSITIONS, WETH_USDG } from "./support/constants";
+import { ETH_USDG, META_USDG, POSITIONS } from "./support/constants";
 import {
   blueChip,
   dealUsdg,
@@ -106,14 +106,14 @@ describe("deposit collateral", () => {
       expect(after.pool).toEqual({ status: "open", terms: { maxLtvBps: 6500, ltBps: 7500 } });
     });
 
-    it("takes a position from the other listed pool, where both tokens are ERC-20", async () => {
-      const user = await borrowerWith(POSITIONS.wethUsdgInRange);
+    it("takes a position from another listed pool, where both tokens are ERC-20 and USDG is currency0", async () => {
+      const user = await borrowerWith(POSITIONS.metaUsdgInRange);
 
-      await depositCollateral(user.clients, blueChip, POSITIONS.wethUsdgInRange);
+      await depositCollateral(user.clients, blueChip, POSITIONS.metaUsdgInRange);
 
-      const after = await position(POSITIONS.wethUsdgInRange, user.address);
+      const after = await position(POSITIONS.metaUsdgInRange, user.address);
       expect(after.place).toBe("collateral");
-      expect(after.poolId).toBe(WETH_USDG.id);
+      expect(after.poolId).toBe(META_USDG.id);
     });
   });
 
@@ -171,7 +171,7 @@ describe("deposit collateral", () => {
     it("refuses a position on the page of another pool", async () => {
       const user = await borrowerWith(TOKEN);
 
-      expect(depositCollateralGate(await position(TOKEN, user.address), WETH_USDG.id)).toMatchObject({
+      expect(depositCollateralGate(await position(TOKEN, user.address), META_USDG.id)).toMatchObject({
         ok: false,
         code: "WrongPool",
       });

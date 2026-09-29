@@ -40,6 +40,7 @@ const collateral = (over: Partial<PositionState> = {}): PositionState => ({
   ticks: null,
   decimals: null,
   holdings: null,
+  holdingsError: null,
   pool: { status: "open", terms: { maxLtvBps: 6500, ltBps: 7500 } },
   paused: false,
   debt: 100n * USDG,
@@ -121,6 +122,31 @@ describe("depositCollateralGate", () => {
     it("compares pool ids whatever their case", () => {
       expect(depositCollateralGate(inWallet(), POOL.toUpperCase().replace("0X", "0x") as `0x${string}`)).toEqual({ ok: true });
     });
+
+    it("refuses a position the valuer cannot price, with the valuer's reason: the market would refuse it too", () => {
+      const noAverage = { code: "MemeTwapUnavailable", message: "not recorded for 30 minutes yet" };
+      const stale = { code: "StalePrice", message: "the stock market is closed" };
+
+      expect(depositCollateralGate(inWallet({ holdingsError: noAverage }), POOL)).toEqual({ ok: false, ...noAverage });
+      expect(depositCollateralGate(inWallet({ holdingsError: stale }), POOL)).toEqual({ ok: false, ...stale });
+    });
+
+    it("says that a pool is frozen or not listed before it says that the position cannot be priced", () => {
+      const unpriced = { holdingsError: { code: "StalePrice", message: "stale" } };
+
+      expect(code(depositCollateralGate(inWallet({ ...unpriced, pool: { status: "unlisted", terms: null } }), POOL))).toBe(
+        "PoolNotListed",
+      );
+      expect(code(depositCollateralGate(inWallet({ ...unpriced, pool: { status: "frozen", terms: null } }), POOL))).toBe(
+        "PoolFrozenForNewPositions",
+      );
+    });
+
+    it("takes a position that was valued, whatever an earlier reading failed with", () => {
+      const holdings = { amount0: 1n, amount1: 1n, principalUsd: 100n * 10n ** 18n, feesUsd: 0n };
+
+      expect(depositCollateralGate(inWallet({ holdings, holdingsError: null }), POOL)).toEqual({ ok: true });
+    });
   });
 });
 
@@ -146,6 +172,16 @@ describe("borrowGate", () => {
     it("refuses a position that is not the wallet's collateral", () => {
       expect(code(borrowGate(inWallet(), 10n * USDG))).toBe("NotTheDepositor");
     });
+
+    it("refuses a position of a pool that is not listed, and says that the pool is not listed", () => {
+      const unlisted = { pool: { status: "unlisted", terms: null } } as const;
+
+      const gate = borrowGate(inWallet(unlisted), 10n * USDG);
+
+      expect(code(gate)).toBe("PoolNotListed");
+      expect(gate.ok === false && gate.message).toMatch(/not listed/);
+      expect(code(borrowGate(collateral(unlisted), 10n * USDG))).toBe("PoolNotListed");
+    });
   });
 
   describe("edge case", () => {
@@ -155,6 +191,12 @@ describe("borrowGate", () => {
       expect(borrowGate(fresh, 10n * USDG)).toEqual({ ok: true });
       // 4 USDG more on a loan that already owes 100 is a loan of 104.
       expect(borrowGate(collateral(), 4n * USDG)).toEqual({ ok: true });
+    });
+
+    it("says of a token that does not exist that it is not collateral, not that its pool is not listed", () => {
+      const missing = inWallet({ place: "missing", poolId: null, pool: { status: "unlisted", terms: null } });
+
+      expect(code(borrowGate(missing, 10n * USDG))).toBe("NotTheDepositor");
     });
 
     it("gives the oracle's reason when the position cannot be priced", () => {

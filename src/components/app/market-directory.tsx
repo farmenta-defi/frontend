@@ -5,34 +5,42 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { FiguresNotice } from "@/components/app/pool-figures";
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
-import {
-  COLLATERAL_POOLS,
-  fmtCompactUsdg,
-  MARKETS,
-  poolHref,
-  type CollateralPool,
-} from "@/lib/markets";
-import { RISK_PARAMS } from "@/lib/risk-params";
+import { directoryRows, inRanges, NO_RANGES, type DirectoryRanges, type DirectoryRow } from "@/lib/backend/directory";
+import { knownPools, type ListedPool } from "@/lib/backend/figures";
+import { useListedPools, usePoolsFigures } from "@/lib/backend/hooks";
+import { fmtCompactUsdg, fmtPct, NO_FIGURE, orDash } from "@/lib/format";
+import { COLLATERAL_POOLS, MARKETS, poolHref, type CollateralPool } from "@/lib/markets";
 import { cn } from "@/lib/utils";
 
 type FilterMenu = "network" | "loan" | "collateral" | "advanced" | null;
-type FilterRanges = { marketMin: string; marketMax: string; liquidityMin: string; liquidityMax: string; rateMin: string; rateMax: string; lltvMin: number; lltvMax: number };
-
-/**
- * The percentage the LLTV column shows. It is the borrow-time max LTV, not the
- * liquidation threshold — see the note on the column header in this file.
- */
-const ltvPct = (pool: CollateralPool) => RISK_PARAMS[pool.tier].maxLtv * 100;
+type FilterRanges = DirectoryRanges;
+type Row = DirectoryRow<CollateralPool>;
 
 /** The advanced sheet's numeric ranges, all built the same way. */
 const RANGE_ROWS = [
-  ["Total market size", "marketMin", "marketMax", "$"],
-  ["Total liquidity", "liquidityMin", "liquidityMax", "$"],
+  ["Total borrow", "borrowMin", "borrowMax", "USDG"],
+  ["Available to borrow", "availableMin", "availableMax", "USDG"],
   ["6H rate", "rateMin", "rateMax", "%"],
 ] as const;
+
+const POOL_IDS = COLLATERAL_POOLS.map((pool) => pool.poolId);
+
+/** A pool the backend lists and the app has no page for, said once and not at every refresh. */
+const reported = new Set<string>();
+const reportOnce = (message: string) => {
+  if (reported.has(message)) return;
+  reported.add(message);
+  console.warn(message);
+};
+
+/** A figure in a cell, or the dash. It pulses while the figures are on their way. */
+function Cell({ pending, children }: { pending: boolean; children: string }) {
+  return <span className={cn(children === NO_FIGURE && "text-steel-500", pending && children === NO_FIGURE && "animate-pulse")}>{children}</span>;
+}
 
 function FilterPanel({ menu, onClose, setNetwork, setLoan, setCollateral, ranges, setRanges, reset }: {
   menu: Exclude<FilterMenu, null>;
@@ -83,7 +91,7 @@ function FilterPanel({ menu, onClose, setNetwork, setLoan, setCollateral, ranges
                 <input
                   key={key}
                   type="range"
-                  min="30"
+                  min="0"
                   max="100"
                   aria-label={key === "lltvMin" ? "LLTV minimum" : "LLTV maximum"}
                   value={ranges[key]}
@@ -93,7 +101,7 @@ function FilterPanel({ menu, onClose, setNetwork, setLoan, setCollateral, ranges
               ))}
             </div>
             <div className="mt-2.5 flex justify-between text-[10px] text-steel-400">
-              {["30%", "50%", "65%", "80%", "100%"].map((tick) => <span key={tick}>{tick}</span>)}
+              {["0%", "25%", "50%", "75%", "100%"].map((tick) => <span key={tick}>{tick}</span>)}
             </div>
           </div>
         </div>
@@ -155,26 +163,39 @@ export function MarketDirectory() {
   const [network, setNetwork] = useState<"robinhood">("robinhood");
   const [loan, setLoan] = useState<"USDG">("USDG");
   const [collateral, setCollateral] = useState<"all" | "blue-chip" | "meme">("all");
-  const [ranges, setRanges] = useState<FilterRanges>({ marketMin: "", marketMax: "", liquidityMin: "", liquidityMax: "", rateMin: "", rateMax: "", lltvMin: 30, lltvMax: 100 });
-  const filteredRows = useMemo(() => COLLATERAL_POOLS.filter((pool) => {
+  const [ranges, setRanges] = useState<FilterRanges>(NO_RANGES);
+
+  // Which pools there are is the app's list; the backend gives each its figures. A pool the
+  // backend lists and the app does not know is reported and left out (see `knownPools`).
+  const blueChip = useListedPools("blue-chip");
+  const meme = useListedPools("meme");
+  const figures = usePoolsFigures(POOL_IDS);
+  const listed = useMemo<ListedPool[]>(
+    () => [...(blueChip.data ?? []), ...(meme.data ?? [])],
+    [blueChip.data, meme.data],
+  );
+  useEffect(() => {
+    knownPools(listed, COLLATERAL_POOLS, reportOnce);
+  }, [listed]);
+  const pending = figures.some((item) => item.status === "loading");
+  const rows = useMemo(
+    () => directoryRows(COLLATERAL_POOLS, listed, figures.flatMap((item) => (item.data ? [item.data] : []))),
+    [listed, figures],
+  );
+
+  const filteredRows = useMemo(() => rows.filter((row) => {
+    const { pool } = row;
     const matchesQuery = `${pool.pair} ${pool.tier} ${pool.trustedBy}`.toLowerCase().includes(query.toLowerCase());
     const matchesCollateral = collateral === "all" || pool.tier === collateral;
-    const matchesMarketMin = !ranges.marketMin || pool.marketSizeUsd >= Number(ranges.marketMin);
-    const matchesMarketMax = !ranges.marketMax || pool.marketSizeUsd <= Number(ranges.marketMax);
-    const matchesLiquidityMin = !ranges.liquidityMin || pool.liquidityUsd >= Number(ranges.liquidityMin);
-    const matchesLiquidityMax = !ranges.liquidityMax || pool.liquidityUsd <= Number(ranges.liquidityMax);
-    const matchesRateMin = !ranges.rateMin || pool.rate6hPct >= Number(ranges.rateMin);
-    const matchesRateMax = !ranges.rateMax || pool.rate6hPct <= Number(ranges.rateMax);
-    const lltv = ltvPct(pool);
-    return matchesQuery && matchesCollateral && pool.network === network && loan === "USDG" && matchesMarketMin && matchesMarketMax && matchesLiquidityMin && matchesLiquidityMax && matchesRateMin && matchesRateMax && lltv >= ranges.lltvMin && lltv <= ranges.lltvMax;
-  }), [collateral, loan, network, query, ranges]);
+    return matchesQuery && matchesCollateral && pool.network === network && loan === "USDG" && inRanges(row, ranges);
+  }), [collateral, loan, network, query, ranges, rows]);
 
   const resetFilters = () => {
     setQuery("");
     setNetwork("robinhood");
     setLoan("USDG");
     setCollateral("all");
-    setRanges({ marketMin: "", marketMax: "", liquidityMin: "", liquidityMax: "", rateMin: "", rateMax: "", lltvMin: 30, lltvMax: 100 });
+    setRanges(NO_RANGES);
   };
 
   useEffect(() => {
@@ -225,15 +246,68 @@ export function MarketDirectory() {
         <label className="relative block w-full sm:hidden"><span className="sr-only">Filter markets</span><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-steel-500" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter markets" className="focus-ring h-10 w-full rounded-lg border border-border bg-white/[0.04] pl-9 pr-3 text-[13px] text-foreground outline-none placeholder:text-steel-500 focus:border-brand-400/50" /></label>
       </div>
 
+      <FiguresNotice figures={[blueChip, meme, ...figures]} className="border-b border-border px-4 py-3 sm:px-6" />
+
       <div className={cn(!expanded && "overflow-hidden rounded-b-[22px]")}>
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[1020px] border-collapse text-left">
-          <thead><tr className="border-b border-border bg-white/[0.015] text-steel-400"><th className="px-6 py-4 text-[13px] font-medium">Network</th><th className="px-5 py-4 text-[13px] font-medium">Loan</th><th className="px-5 py-4 text-[13px] font-medium">Collateral</th><th className="px-5 py-4 text-right text-[13px] font-medium">LLTV</th><th className="px-5 py-4 text-[13px] font-medium">Trusted by</th><th className="px-5 py-4 text-right text-[13px] font-medium">Total borrow <span className="ml-1 text-steel-500">↓</span></th><th className="px-5 py-4 text-right text-[13px] font-medium">Total liquidity</th><th className="px-6 py-4 text-right text-[13px] font-medium">Borrow APR</th></tr></thead>
-          <tbody>{filteredRows.map((pool) => { const market = MARKETS.find((item) => item.id === pool.tier)!; const href = poolHref(pool); return <tr key={pool.poolId} onClick={() => router.push(href)} className="group cursor-pointer border-b border-border/70 text-[14px] transition-colors last:border-b-0 hover:bg-white/[0.035]"><td className="px-6 py-5"><AssetMark asset={pool.network} label /></td><td className="px-5 py-5"><span className="flex items-center gap-2"><AssetMark asset="USDG" size={20} /><span className="font-semibold text-foreground">USDG</span></span></td><td className="px-5 py-5"><div className="flex items-center gap-2.5"><AssetPair pair={pool.pair} size={24} hint="Uniswap v4 LP" /><div>{/* A real link inside the row, so the pool opens with the keyboard or a middle click too. */}<Link href={href} onClick={(event) => event.stopPropagation()} className="focus-ring rounded font-semibold text-foreground">{pool.pair}</Link><div className="mt-0.5 text-[12px] text-steel-500">{market.name} market</div></div></div></td><td className="tnum px-5 py-5 text-right font-medium text-foreground">{ltvPct(pool).toFixed(2)}%</td><td className="px-5 py-5"><Badge tone={pool.tier === "meme" ? "warn" : "neutral"}>{pool.trustedBy}</Badge></td><td className="tnum px-5 py-5 text-right text-foreground"><div>{fmtCompactUsdg(pool.totalBorrowUsd)}</div><div className="mt-1 text-[11px] text-steel-500">simulated</div></td><td className="tnum px-5 py-5 text-right text-foreground"><div>{fmtCompactUsdg(pool.liquidityUsd)}</div><div className="mt-1 text-[11px] text-steel-500">available market</div></td><td className="tnum px-6 py-5 text-right font-medium text-foreground"><div>{pool.borrowAprPct.toFixed(2)}%</div><span className="mt-2 inline-flex items-center gap-1 text-[11px] text-brand-300 opacity-0 transition-opacity group-hover:opacity-100">Open <ArrowUpRight className="size-3" /></span></td></tr>; })}</tbody>
+          <thead><tr className="border-b border-border bg-white/[0.015] text-steel-400"><th className="px-6 py-4 text-[13px] font-medium">Network</th><th className="px-5 py-4 text-[13px] font-medium">Loan</th><th className="px-5 py-4 text-[13px] font-medium">Collateral</th><th className="px-5 py-4 text-right text-[13px] font-medium">LLTV</th><th className="px-5 py-4 text-[13px] font-medium">Trusted by</th><th className="px-5 py-4 text-right text-[13px] font-medium">Total borrow</th><th className="px-5 py-4 text-right text-[13px] font-medium">Available to borrow</th><th className="px-6 py-4 text-right text-[13px] font-medium">Borrow APR</th></tr></thead>
+          <tbody>
+            {filteredRows.map((row: Row) => {
+              const { pool } = row;
+              const market = MARKETS.find((item) => item.id === pool.tier)!;
+              const href = poolHref(pool);
+              return (
+                <tr key={pool.poolId} onClick={() => router.push(href)} className="group cursor-pointer border-b border-border/70 text-[14px] transition-colors last:border-b-0 hover:bg-white/[0.035]">
+                  <td className="px-6 py-5"><AssetMark asset={pool.network} label /></td>
+                  <td className="px-5 py-5"><span className="flex items-center gap-2"><AssetMark asset="USDG" size={20} /><span className="font-semibold text-foreground">USDG</span></span></td>
+                  <td className="px-5 py-5">
+                    <div className="flex items-center gap-2.5">
+                      <AssetPair pair={pool.pair} size={24} hint="Uniswap v4 LP" />
+                      <div>
+                        {/* A real link inside the row, so the pool opens with the keyboard or a middle click too. */}
+                        <Link href={href} onClick={(event) => event.stopPropagation()} className="focus-ring rounded font-semibold text-foreground">{pool.pair}</Link>
+                        <div className="mt-0.5 text-[12px] text-steel-500">{market.name} market{row.frozen ? " · frozen" : ""}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="tnum px-5 py-5 text-right font-medium text-foreground"><Cell pending={pending}>{orDash(row.maxLtvPct, fmtPct)}</Cell></td>
+                  <td className="px-5 py-5"><Badge tone={pool.tier === "meme" ? "warn" : "neutral"}>{pool.trustedBy}</Badge></td>
+                  <td className="tnum px-5 py-5 text-right text-foreground"><Cell pending={pending}>{orDash(row.debtUsdg, fmtCompactUsdg)}</Cell></td>
+                  <td className="tnum px-5 py-5 text-right text-foreground"><Cell pending={pending}>{orDash(row.availableToBorrowUsdg, fmtCompactUsdg)}</Cell></td>
+                  <td className="tnum px-6 py-5 text-right font-medium text-foreground">
+                    <div><Cell pending={pending}>{orDash(row.borrowAprPct, fmtPct)}</Cell></div>
+                    <span className="mt-2 inline-flex items-center gap-1 text-[11px] text-brand-300 opacity-0 transition-opacity group-hover:opacity-100">Open <ArrowUpRight className="size-3" /></span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
         </table>
       </div>
 
-      <div className="divide-y divide-border/70 md:hidden">{filteredRows.map((pool) => { const market = MARKETS.find((item) => item.id === pool.tier)!; return <Link key={pool.poolId} href={poolHref(pool)} className="block px-4 py-5 transition-colors hover:bg-white/[0.035] focus-ring"><div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2"><AssetPair pair={pool.pair} size={20} /><h3 className="text-[15px] font-semibold text-foreground">{pool.pair}</h3></div><p className="mt-1 flex items-center gap-1.5 text-[12px] text-steel-500"><AssetMark asset="USDG" size={14} />USDG · {market.name} · {pool.trustedBy}</p></div><ArrowUpRight className="size-4 text-steel-500" /></div><div className="mt-5 grid grid-cols-3 gap-4"><div><p className="label-xs">LLTV</p><p className="tnum mt-1 text-[13px] text-foreground">{ltvPct(pool).toFixed(2)}%</p></div><div><p className="label-xs">Borrow</p><p className="tnum mt-1 text-[13px] text-foreground">{fmtCompactUsdg(pool.totalBorrowUsd)}</p></div><div><p className="label-xs">APR</p><p className="tnum mt-1 text-[13px] text-foreground">{pool.borrowAprPct.toFixed(2)}%</p></div></div></Link>; })}</div>
+      <div className="divide-y divide-border/70 md:hidden">
+        {filteredRows.map((row: Row) => {
+          const { pool } = row;
+          const market = MARKETS.find((item) => item.id === pool.tier)!;
+          return (
+            <Link key={pool.poolId} href={poolHref(pool)} className="block px-4 py-5 transition-colors hover:bg-white/[0.035] focus-ring">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2"><AssetPair pair={pool.pair} size={20} /><h3 className="text-[15px] font-semibold text-foreground">{pool.pair}</h3></div>
+                  <p className="mt-1 flex items-center gap-1.5 text-[12px] text-steel-500"><AssetMark asset="USDG" size={14} />USDG · {market.name} · {pool.trustedBy}</p>
+                </div>
+                <ArrowUpRight className="size-4 text-steel-500" />
+              </div>
+              <div className="mt-5 grid grid-cols-3 gap-4">
+                <div><p className="label-xs">LLTV</p><p className="tnum mt-1 text-[13px] text-foreground"><Cell pending={pending}>{orDash(row.maxLtvPct, fmtPct)}</Cell></p></div>
+                <div><p className="label-xs">Borrow</p><p className="tnum mt-1 text-[13px] text-foreground"><Cell pending={pending}>{orDash(row.debtUsdg, fmtCompactUsdg)}</Cell></p></div>
+                <div><p className="label-xs">APR</p><p className="tnum mt-1 text-[13px] text-foreground"><Cell pending={pending}>{orDash(row.borrowAprPct, fmtPct)}</Cell></p></div>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
 
       {!filteredRows.length && <div className="px-6 py-14 text-center"><p className="text-[14px] text-foreground">No markets match this filter.</p><button type="button" onClick={resetFilters} className="focus-ring mt-3 text-[13px] text-brand-300 hover:underline">Clear filters</button></div>}
       </div>

@@ -10,7 +10,7 @@ import {
   type PointerEvent,
 } from "react";
 
-import type { SeriesPoint } from "@/lib/pool-history";
+import { valueAxis, type SeriesPoint } from "@/lib/chart-axis";
 
 const HEIGHT = 248;
 const PAD_TOP = 14;
@@ -39,12 +39,6 @@ const momentLabel = (t: number) => {
   return `${dayLabel(t)} ${d.getUTCFullYear()}, ${clock} UTC`;
 };
 
-const niceStep = (rough: number) => {
-  const magnitude = 10 ** Math.floor(Math.log10(rough));
-  const n = rough / magnitude;
-  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * magnitude;
-};
-
 const thin = (points: SeriesPoint[]) => {
   if (points.length <= MAX_POINTS) return points;
   const every = Math.ceil(points.length / MAX_POINTS);
@@ -61,8 +55,35 @@ const thin = (points: SeriesPoint[]) => {
  *
  * Pointing anywhere in the plot reads out the nearest sample, and so do the
  * arrow keys once the chart has focus.
+ *
+ * A series that is zero throughout is drawn, along the bottom. A series with
+ * no sample in it is not: the frame says that there is no history yet.
  */
-export function TimeSeriesChart({
+export function TimeSeriesChart(props: {
+  points: SeriesPoint[];
+  /** What the series measures, for assistive tech and the readout. */
+  label: string;
+  formatValue: (value: number) => string;
+  formatTick: (value: number) => string;
+  /** Draws a reference line at this value. */
+  average?: { value: number; label: string };
+}) {
+  if (props.points.length === 0) {
+    return (
+      <div
+        role="img"
+        aria-label={`${props.label}: no history yet.`}
+        className="flex items-center justify-center rounded-xl bg-[rgba(148,178,214,0.045)] text-[13px] text-steel-500"
+        style={{ height: HEIGHT - AXIS }}
+      >
+        No history yet
+      </div>
+    );
+  }
+  return <Plot {...props} />;
+}
+
+function Plot({
   points: allPoints,
   label,
   formatValue,
@@ -100,15 +121,10 @@ export function TimeSeriesChart({
   const plotBottom = HEIGHT - AXIS;
   const plotHeight = plotBottom - PAD_TOP;
 
-  const { top, ticks } = useMemo(() => {
-    const peak = Math.max(...points.map((point) => point.v), average?.value ?? 0);
-    const step = niceStep(peak / 4);
-    const ceiling = step * Math.ceil((peak * 1.04) / step);
-    return {
-      top: ceiling,
-      ticks: Array.from({ length: Math.round(ceiling / step) }, (_, i) => step * (i + 1)),
-    };
-  }, [points, average?.value]);
+  const { top, ticks } = useMemo(
+    () => valueAxis(Math.max(...points.map((point) => point.v), average?.value ?? 0)),
+    [points, average?.value],
+  );
 
   const start = points[0].t;
   const span = points[last].t - start || 1;

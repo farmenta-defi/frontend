@@ -5,16 +5,12 @@ import { useMemo, useState } from "react";
 import { TimeSeriesChart } from "@/components/app/time-series-chart";
 import { Segmented } from "@/components/ui/segmented";
 import { SelectMenu } from "@/components/ui/select-menu";
-import type { CollateralPool } from "@/lib/markets";
-import {
-  compactParts,
-  compactTick,
-  HISTORY_RANGES,
-  MOCK_USDG_PRICE,
-  poolBalanceHistory,
-  type BalanceMetric,
-  type HistoryRange,
-} from "@/lib/pool-history";
+import { HISTORY_RANGES, type HistoryRange } from "@/lib/backend/figures";
+import { usePoolFigures } from "@/lib/backend/hooks";
+import { balanceSeries, type BalanceMetric } from "@/lib/backend/series";
+import { compactParts, compactTick, NO_FIGURE } from "@/lib/format";
+import { MARKETS, type CollateralPool } from "@/lib/markets";
+import { cn } from "@/lib/utils";
 
 const METRICS = [
   { id: "borrow", label: "Borrow", title: "Outstanding loans" },
@@ -22,64 +18,74 @@ const METRICS = [
   { id: "liquidity", label: "Liquidity", title: "Available liquidity" },
 ] as const satisfies readonly { id: BalanceMetric; label: string; title: string }[];
 
-const UNITS = [
-  { id: "USDG", label: "USDG" },
-  { id: "USD", label: "USD" },
-] as const;
+const formatValue = (value: number) => {
+  const { figure, unit } = compactParts(value);
+  return `${figure}${unit} USDG`;
+};
 
-type Unit = (typeof UNITS)[number]["id"];
-
-/** How much has been lent, supplied, and left to borrow, over time. */
+/**
+ * How much has been lent, supplied, and left to borrow, over time, read from
+ * the backend. The amounts are the market's: lenders supply to the market,
+ * and every pool in it draws on the same USDG.
+ */
 export function PoolMarketChart({ pool }: { pool: CollateralPool }) {
   const [metric, setMetric] = useState<BalanceMetric>("borrow");
-  const [unit, setUnit] = useState<Unit>("USD");
-  const [range, setRange] = useState<HistoryRange>("3m");
+  const [range, setRange] = useState<HistoryRange>("1w");
+  const figures = usePoolFigures(pool.poolId, range);
 
-  const points = useMemo(() => {
-    const price = unit === "USD" ? MOCK_USDG_PRICE : 1;
-    return poolBalanceHistory(pool, metric, range).map((point) => ({
-      t: point.t,
-      v: point.v * price,
-    }));
-  }, [pool, metric, unit, range]);
+  const points = useMemo(() => balanceSeries(figures.data?.history ?? [], metric), [figures.data, metric]);
 
+  const market = MARKETS.find((item) => item.id === pool.tier)!;
   const title = METRICS.find((item) => item.id === metric)!.title;
-  const sign = unit === "USD" ? "$" : "";
-  const headline = compactParts(points[points.length - 1].v);
-  const formatValue = (value: number) => {
-    const { figure, unit: magnitude } = compactParts(value);
-    return unit === "USD" ? `$${figure}${magnitude}` : `${figure}${magnitude} USDG`;
-  };
+  const latest = points[points.length - 1];
+  const headline = latest ? compactParts(latest.v) : null;
 
   return (
     <div className="surface p-5 sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div>
           <p className="text-[13px] text-steel-400">
-            {title} ({unit})
+            {title}, {market.name} market (USDG)
           </p>
-          <p className="font-display tnum mt-2 text-[30px] font-semibold leading-none text-foreground sm:text-[34px]">
-            {sign}
-            {headline.figure}
-            <span className="text-steel-500">{headline.unit}</span>
+          <p
+            className={cn(
+              "font-display tnum mt-2 text-[30px] font-semibold leading-none sm:text-[34px]",
+              headline ? "text-foreground" : "text-steel-500",
+              figures.status === "loading" && "animate-pulse",
+            )}
+          >
+            {headline ? headline.figure : NO_FIGURE}
+            {headline && <span className="text-steel-500">{headline.unit}</span>}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <Segmented label="Balance" value={metric} options={METRICS} onChange={setMetric} />
-          <Segmented label="Unit" value={unit} options={UNITS} onChange={setUnit} />
           <SelectMenu label="Period" value={range} options={HISTORY_RANGES} onChange={setRange} />
         </div>
       </div>
 
       <div className="mt-6">
-        <TimeSeriesChart
-          points={points}
-          label={`${title} in ${unit}`}
-          formatValue={formatValue}
-          formatTick={(value) => `${sign}${compactTick(value)}`}
-        />
+        {figures.status === "failed" ? (
+          <Unavailable />
+        ) : (
+          <TimeSeriesChart
+            points={points}
+            label={`${title} in USDG`}
+            formatValue={formatValue}
+            formatTick={compactTick}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+/** Where a chart would be, when its history could not be read. The reason is given once, at the top of the page. */
+export function Unavailable() {
+  return (
+    <div className="flex h-[218px] items-center justify-center rounded-xl bg-[rgba(148,178,214,0.045)] text-[13px] text-steel-500">
+      History unavailable
     </div>
   );
 }

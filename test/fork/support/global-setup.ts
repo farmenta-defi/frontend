@@ -3,9 +3,9 @@ import type { TestProject } from "vitest/node";
 import { startFork } from "../../../scripts/fork.mjs";
 
 /**
- * One fork per run, started and deployed to by `scripts/fork.mjs`, the same
- * code `pnpm fork` runs for the app. The tests get its URL and the manifest it
- * wrote, and read the manifest the way the app reads one.
+ * One fork per run, started by `scripts/fork.mjs`, the same code `pnpm fork`
+ * runs for the app. The tests get its URL and the manifest of the deployment
+ * on it, and read the manifest the way the app reads one.
  */
 declare module "vitest" {
   export interface ProvidedContext {

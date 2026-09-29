@@ -1,25 +1,16 @@
-import { ArrowLeft, Info } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MarketActionPanel } from "@/components/app/market-action-panel";
-import { PoolActivity } from "@/components/app/pool-activity";
+import { PoolFacts, PoolHeadline, PoolRiskTerms } from "@/components/app/pool-figures";
 import { PoolMarketChart } from "@/components/app/pool-market-chart";
 import { PoolRates } from "@/components/app/pool-rates";
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { Badge } from "@/components/ui/badge";
-import { InfoList, InfoRow } from "@/components/ui/field";
 import { Tabs } from "@/components/ui/tabs";
-import {
-  COLLATERAL_POOLS,
-  compactUsdgParts,
-  fmtUsd,
-  findPool,
-  MARKETS,
-  NETWORKS,
-} from "@/lib/markets";
-import { RISK_PARAMS } from "@/lib/risk-params";
+import { COLLATERAL_POOLS, findPool, MARKETS, NETWORKS } from "@/lib/markets";
 
 /**
  * One listed collateral pool, addressed the way the URL reads it:
@@ -54,62 +45,11 @@ export async function generateMetadata({
   };
 }
 
-const pct = (fraction: number) => `${(fraction * 100).toFixed(2)}%`;
-
-/**
- * One headline figure. Deliberately unboxed: rules and dividers around four
- * numbers read as a table of four things, when the point is the numbers.
- * The magnitude ("K", "M", "%") drops a shade so the digits carry the weight.
- */
-function Metric({
-  label,
-  value,
-  unit,
-  sub,
-  hint,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  sub: string;
-  hint: string;
-}) {
-  return (
-    <div>
-      <div className="group/hint relative inline-flex items-center gap-1.5">
-        <span className="text-[13px] text-steel-400">{label}</span>
-        <Info className="size-3.5 shrink-0 text-steel-600" aria-hidden />
-        <span
-          role="tooltip"
-          className="pointer-events-none absolute bottom-full left-0 z-30 mb-2 hidden w-60 rounded-lg border border-border bg-[#292a2c] px-2.5 py-2 text-[11px] leading-[17px] text-steel-300 shadow-xl group-hover/hint:block"
-        >
-          {hint}
-          <span className="mt-1 block text-steel-500">Simulated: the contracts are not deployed yet.</span>
-        </span>
-      </div>
-      <p className="font-display tnum mt-2 text-[30px] font-semibold leading-none text-foreground sm:text-[34px]">
-        {value}
-        <span className="text-steel-500">{unit}</span>
-      </p>
-      <p className="tnum mt-2.5 text-[12px] text-steel-500">{sub}</p>
-    </div>
-  );
-}
-
-/**
- * Heads a section drawn from generated history. The label is not decoration:
- * a chart of invented balances without it would read as the pool's record.
- */
 function SectionHeading({ id, children }: { id: string; children: string }) {
   return (
-    <div className="mb-4 flex items-center justify-between gap-3">
-      <h2 id={id} className="text-[17px] font-semibold text-foreground">
-        {children}
-      </h2>
-      <span title="The contracts are not deployed yet, so this history is generated.">
-        <Badge tone="neutral">Simulated</Badge>
-      </span>
-    </div>
+    <h2 id={id} className="mb-4 text-[17px] font-semibold text-foreground">
+      {children}
+    </h2>
   );
 }
 
@@ -119,12 +59,7 @@ export default async function MarketDetailPage({ params }: { params: Promise<Rou
   if (!pool) notFound();
 
   const market = MARKETS.find((item) => item.id === pool.tier)!;
-  const risk = RISK_PARAMS[pool.tier];
   const chain = NETWORKS[pool.network];
-  const availableUsd = pool.liquidityUsd - pool.totalBorrowUsd;
-  const utilization = (pool.totalBorrowUsd / pool.liquidityUsd) * 100;
-  const borrowed = compactUsdgParts(pool.totalBorrowUsd);
-  const liquidity = compactUsdgParts(pool.liquidityUsd);
 
   return (
     <div>
@@ -158,89 +93,21 @@ export default async function MarketDetailPage({ params }: { params: Promise<Rou
           wrapping ragged. */}
       <div className="mt-9 grid gap-10 lg:grid-cols-[minmax(0,1fr)_356px] lg:gap-12">
         <div className="min-w-0">
-          <section aria-label="Market activity" className="grid grid-cols-1 gap-x-10 gap-y-8 sm:grid-cols-2">
-            <Metric
-              label="Total Borrow"
-              value={borrowed.value}
-              unit={borrowed.unit}
-              sub={borrowed.inToken}
-              hint={`USDG borrowed against ${pool.pair} LP positions held by this pool.`}
-            />
-            <Metric
-              label="Total Liquidity"
-              value={liquidity.value}
-              unit={liquidity.unit}
-              sub={liquidity.inToken}
-              hint={`USDG supplied to the ${market.name} market, which this pool borrows from.`}
-            />
-            <Metric
-              label="Borrow APR"
-              value={pool.borrowAprPct.toFixed(2)}
-              unit="%"
-              sub="Paid by borrowers"
-              hint="Annualised borrowing cost at the current utilisation, from the kinked rate model."
-            />
-            <Metric
-              label="Supply APY"
-              value={market.supplyApy.toFixed(2)}
-              unit="%"
-              sub="Earned by USDG lenders"
-              hint={`Annualised yield for USDG depositors in the ${market.name} market, after the ${market.reserveFactor}% reserve factor.`}
-            />
-          </section>
+          <PoolHeadline pool={pool} />
 
           <div className="mt-10">
             <Tabs
               label="Pool details"
               tabs={[
-                {
-                  id: "pool",
-                  label: "Pool",
-                  panel: (
-                    <>
-                      <InfoList className="border-t-0">
-                        <InfoRow label="Network">
-                          {chain.name} · chain {chain.chainId}
-                        </InfoRow>
-                        <InfoRow label="Loan asset">USDG</InfoRow>
-                        <InfoRow label="Collateral">Uniswap v4 {pool.pair} LP NFT</InfoRow>
-                        <InfoRow label="Priced by">{risk.priceSource}</InfoRow>
-                        <InfoRow label="Utilization">{utilization.toFixed(1)}%</InfoRow>
-                        <InfoRow label="Available to borrow">{fmtUsd(availableUsd)}</InfoRow>
-                      </InfoList>
-                      <div className="mt-5">
-                        <p className="label-xs">Pool ID</p>
-                        <p className="mt-2 break-all font-mono text-[12px] leading-[18px] text-steel-300">
-                          {pool.poolId}
-                        </p>
-                      </div>
-                    </>
-                  ),
-                },
-                {
-                  id: "risk",
-                  label: "Risk parameters",
-                  panel: (
-                    <InfoList className="border-t-0">
-                      <InfoRow label="Max LTV at borrow">{pct(risk.maxLtv)}</InfoRow>
-                      <InfoRow label="Liquidation threshold">{pct(risk.liqThreshold)}</InfoRow>
-                      <InfoRow label="Liquidator bonus">{pct(risk.liquidatorBonus)}</InfoRow>
-                      <InfoRow label="Protocol liquidation fee">{risk.protocolLiqFeePct}% of repay</InfoRow>
-                      <InfoRow label="Close factor">{risk.closeFactor}</InfoRow>
-                      <InfoRow label="Debt cap, this pool">{risk.poolDebtCap}</InfoRow>
-                      <InfoRow label="Debt cap, whole market">{fmtUsd(risk.marketDebtCapUsd)}</InfoRow>
-                      <InfoRow label="Reserve factor">{risk.reserveFactorPct}% of interest</InfoRow>
-                      <InfoRow label="Reserve floor">{risk.reserveFloorPct}% of total assets</InfoRow>
-                      <InfoRow label="Interest rate model">
-                        kink {risk.irm.kinkPct}% · slope {risk.irm.slope1Pct}% / {risk.irm.slope2Pct}%
-                      </InfoRow>
-                    </InfoList>
-                  ),
-                },
+                { id: "pool", label: "Pool", panel: <PoolFacts pool={pool} /> },
+                { id: "risk", label: "Risk parameters", panel: <PoolRiskTerms pool={pool} /> },
               ]}
             />
           </div>
 
+          {/* No list of transactions: the backend has no route for a pool's activity yet (FAR-85),
+              and the page shows nothing it cannot read (decided by the product owner, 29 Sep 2026).
+              The table is kept, in pool-activity.tsx, for when there are rows to give it. */}
           <div className="mt-12 space-y-12">
             <section aria-labelledby="market-history">
               <SectionHeading id="market-history">Market</SectionHeading>
@@ -249,12 +116,7 @@ export default async function MarketDetailPage({ params }: { params: Promise<Rou
 
             <section aria-labelledby="rate-history">
               <SectionHeading id="rate-history">Rates</SectionHeading>
-              <PoolRates pool={pool} supplyApyPct={market.supplyApy} />
-            </section>
-
-            <section aria-labelledby="activity">
-              <SectionHeading id="activity">Activity</SectionHeading>
-              <PoolActivity pool={pool} />
+              <PoolRates pool={pool} />
             </section>
           </div>
         </div>

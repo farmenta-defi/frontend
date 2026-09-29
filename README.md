@@ -18,10 +18,58 @@ pnpm dev
 ```bash
 pnpm lint
 pnpm test        # unit tests, no network
-pnpm test:fork   # the on-chain flows against a deployed anvil fork, see test/fork/README.md
+pnpm test:fork   # the on-chain flows on an anvil fork of the chain as deployed, see test/fork/README.md
 pnpm fork        # the same fork, kept running for `pnpm dev`
 pnpm abi:sync    # rebuild src/abis from the smart-contract commit in src/abis/source.json
 ```
+
+## Listed pools
+
+The app has a page for each pool listed on the chain, and for no other:
+
+| Pool | Market | Priced by |
+|---|---|---|
+| ETH/USDG | Blue chip | Chainlink |
+| META/USDG | Blue chip | Chainlink |
+| NVDA/USDG | Blue chip | Chainlink |
+| CASHCAT/USDG | Meme | 30-minute average, recorded on the chain |
+| PONS/USDG | Meme | 30-minute average, recorded on the chain |
+| AI/USDG | Meme | 30-minute average, recorded on the chain |
+
+Each is written in `src/lib/markets.ts` with its id and the `PoolKey` the id is the hash of; a
+test holds the two together. The list is in the app because the backend cannot name a pool's
+tokens yet: all six were created before the indexer's first block. It moves to the backend when
+that is done.
+
+Two things differ from pool to pool and are handled by address, not by position: USDG is
+currency0 in META/USDG and NVDA/USDG and currency1 in the other four, and ETH/USDG pairs native
+ETH, not WETH.
+
+META and CASHCAT have no logo in `public/` yet and are drawn as a lettered disc.
+
+## Displayed figures
+
+Every figure on a page that is not about the connected wallet comes from the backend, through
+`src/lib/backend/`: supply APY, borrow APR, utilisation and TVL of a market, a pool's terms, its
+debt and its room to borrow, and the history the charts draw.
+
+- **The address is `NEXT_PUBLIC_API_URL`.** It is public. The paid RPC stays on the backend.
+- **Units are converted in the data layer, once.** The backend sends an amount as a decimal
+  string of base units, a percentage as a string with two decimals, and `null` for a figure it
+  does not have. A component receives USDG and percentages as numbers.
+- **A pool's terms are its own.** Max LTV, liquidation threshold, liquidator bonus, debt cap and
+  minimum position are read per pool: META/USDG and NVDA/USDG lend at 50% and 65%, not at the
+  blue-chip preset of 65% and 75%.
+- **Zero is a figure, and an absent figure is a dash.** A market nobody has supplied to shows 0.
+  A figure the backend does not have shows a dash. Neither is ever filled with a number.
+- **When the backend cannot be read the page says so**, once, above the figures, and the figures
+  are dashes. The pages stay open and the on-chain actions keep working: they go through the
+  wallet's RPC.
+- **A pool the backend lists and the app has no page for is not shown**, and is reported in the
+  browser's console.
+- **A pool's page has no list of transactions.** The backend has no route for a pool's activity.
+- The tests of the data layer read answers recorded from the live backend
+  (`src/lib/backend/fixtures/`).
 
 ## On-chain actions
 
@@ -34,8 +82,15 @@ borrow, repay, and withdraw collateral. They live in `src/lib/onchain/`.
 - **ABIs** are generated from the smart-contract commit pinned in `src/abis/source.json`.
 - **What a transaction is decided on** (balance, allowance, `maxWithdraw`, `maxBorrow`, the debt,
   the health factor, `paused`, whether a pool is frozen) is read from the chain through the
-  browser's RPC when the user is about to sign. Displayed figures (APY, utilisation, pool lists,
-  history) belong to the backend data layer.
+  browser's RPC when the user is about to sign. Displayed figures (APY, utilisation, a pool's
+  terms, history) belong to the backend data layer.
+- **A position that cannot be priced is refused before a signature is asked for**, with the
+  oracle's reason. For a stock pool whose price is older than 25 hours the reason says that the
+  stock market is closed; for a meme pool, that its price has to be recorded for 30 minutes.
+- **A meme position is priced as the next transaction will find it.** The market records the
+  pool's price itself at the start of a deposit and of a loan. When a read finds no average price
+  because the keeper has been quiet, it is taken again after `PriceOracle.record`, inside one
+  `eth_call`. Nothing is sent.
 - **Every transaction is simulated first.** A simulation that reverts sends nothing, and the
   contract's error is shown as a sentence (`src/lib/onchain/errors.ts`).
 - **Approvals are for the amount being moved**, never unlimited.
@@ -88,9 +143,11 @@ pure black.
 ## Structure
 - `src/lib/chain.ts`: the chain, importable from Server Components (`lib/wagmi.ts` calls RainbowKit's client-only `getDefaultConfig()` at module scope, so it cannot be imported server-side)
 - `src/lib/wagmi.ts`: transports + RainbowKit config
-- `src/lib/risk-params.ts`: §6.2 risk parameters at spec v0.9, **single source** for pool pages, the action rail, and the market mock data
-- `src/lib/pool-history.ts`: generated balance, rate and transaction history for pool pages, seeded per pool so the server and the browser draw the same chart
-- `src/lib/markets.ts`: market and pool model, with mock activity data
+- `src/lib/markets.ts`: the two markets and the six listed pools: ids, `PoolKey`s and names, no figures
+- `src/lib/backend/`: the data layer: the backend's routes, the conversion of its answers into figures, the hooks, and the recorded answers the tests read
+- `src/lib/risk-params.ts`: what belongs to a market and not to a pool (close factor, market debt cap, reserve factor and floor, rate model), from spec §6.2
+- `src/lib/format.ts`: how a figure is written, and the dash for one that is absent
+- `src/lib/chart-axis.ts`: the value axis of a chart, which has to draw a series that is zero
 - `src/lib/deployment.ts`: the address manifest
 - `src/lib/units.ts`: USDG (6 decimals), USD (1e18) and bps conversions, shared with the data layer
 - `src/lib/query-keys.ts`: query keys for the backend and the chain, and what a transaction invalidates
@@ -102,12 +159,12 @@ pure black.
 - `src/app/(workspace)/`: the app: `market`, `portfolio`, and one page per pool; `lend` and `borrow` are old addresses that redirect into `market`
 
 ## Honesty rules that are part of the design
-- **Placeholder numbers are labelled.** APY, APR, utilisation, TVL and the mock positions are invented until FarmentaMarket is deployed, and a lending UI that shows invented yields without a label is lying. Pool pages say "Simulated" on each generated section and in each headline metric's tooltip. The action rail's own figures (balances, debt, collateral value, health factor) are read from the chain. The market table does not carry a label yet and needs one.
+- **No figure is invented.** APY, APR, utilisation, TVL, a pool's terms and the charts are the backend's, and balances, debt, collateral value and health factor are read from the chain. Where a figure cannot be read there is a dash and a sentence that says why, never a number standing in for it.
 - **Owner powers are stated in the contract README and on the documentation site, not in the app.** Spec §15 items 9 (the upgrade key) and 11 (the owner can lower a liquidation threshold) are disclosed at [tech-docs-pearl.vercel.app](https://tech-docs-pearl.vercel.app/), page `risk/admin-powers`. Decided by the product owner on 28 Sep 2026 (spec v1.62); no page of this app carries them.
 - **One colour rule for the health factor.** `hfTone()` in `src/components/ui/health-bar.tsx` decides the colour everywhere, so the same number is never cyan on one page and orange on another.
 
 ## Notes
-- The Portfolio page shows the connected wallet, its deposit in each market, and the loans on the positions this browser knows for it, all read from the chain and pinned to `chainId: 4663`. Net APY and the Activity tab are still empty; they come from the backend data layer.
-- Pool pages draw their Market, Rates and Activity sections from `src/lib/pool-history.ts`, which generates them from a seed. Each of those sections is labelled "Simulated".
+- The Portfolio page shows the connected wallet, its deposit in each market, and the loans on the positions this browser knows for it, all read from the chain and pinned to `chainId: 4663`. Net APY and the Activity tab are still empty; they come from the backend's portfolio and activity routes (FAR-71).
+- The Market and Rates charts on a pool's page are the history of the pool's market: lenders supply to the market, and every pool in it borrows from the same USDG at the same rate.
 - Some ISPs DNS-hijack `rpc.mainnet.chain.robinhood.com`; set `NEXT_PUBLIC_RPC_URL` to a provider endpoint (Alchemy free tier) if reads fail.
 - `src/app/icon.png` and `apple-icon.png` are generated from the logo; regenerate them if the logo changes.

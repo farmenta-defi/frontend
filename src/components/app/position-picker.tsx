@@ -3,9 +3,11 @@
 import { useMemo } from "react";
 
 import { buttonClasses } from "@/components/ui/button";
-import { fmtUsd, type CollateralPool } from "@/lib/markets";
+import { fmtAmount, fmtUsd } from "@/lib/format";
+import { poolById, type CollateralPool } from "@/lib/markets";
 import { describePosition } from "@/lib/onchain/describe";
 import { inPool } from "@/lib/onchain/discovery";
+import { explainForPool } from "@/lib/onchain/errors";
 import { listState, unreadNote, type ListStatus } from "@/lib/onchain/list-status";
 import { usePositions, useSession, useWalletPositions } from "@/lib/onchain/hooks";
 import type { PositionState } from "@/lib/onchain/reads";
@@ -69,6 +71,24 @@ export function RangeLine({ position }: { position: PositionState }) {
   );
 }
 
+/**
+ * What the position holds of each token, the pair's token first. Where it
+ * could not be valued the reason stands in its place, in the pool's own words.
+ */
+export function HoldingsLine({ position }: { position: PositionState }) {
+  const pool = poolById(position.poolId);
+  const { amounts } = describePosition(position);
+  if (amounts && pool) {
+    return (
+      <>
+        {fmtAmount(amounts.base)} {pool.base.symbol} · {fmtAmount(amounts.usdg)} USDG
+      </>
+    );
+  }
+  const reason = position.holdingsError ?? position.riskError;
+  return reason ? <span className="text-warn">{explainForPool(reason, pool).message}</span> : null;
+}
+
 export function PositionPicker({
   pool,
   list,
@@ -130,6 +150,9 @@ export function PositionPicker({
               </span>
               <span className="mt-0.5 block text-[11px] text-steel-400">
                 <RangeLine position={position} />
+              </span>
+              <span className="mt-0.5 block text-[11px] text-steel-400">
+                <HoldingsLine position={position} />
               </span>
               <span className="mt-0.5 block truncate text-[11px] text-steel-500">
                 {position.place === "collateral"

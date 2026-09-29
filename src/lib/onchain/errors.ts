@@ -76,7 +76,8 @@ const MESSAGES: Record<string, (args: Args) => string> = {
   InvalidPrice: () => "The price feed returned no valid price. Try again in a moment.",
   SpotPriceDeviation: ([deviation, maximum]) =>
     `The pool's price is ${percent(deviation)} away from the oracle, more than the ${percent(maximum)} allowed. Try again when they agree.`,
-  MemeTwapUnavailable: () => "This pool has no recent average price to lend against yet. Try again in a few minutes.",
+  MemeTwapUnavailable: () =>
+    "This pool's price has not been recorded for 30 minutes yet, and the market lends against its 30-minute average. The pool can be used once the recording has run that long.",
   MemeSpotUnavailable: () => "This pool has no price to lend against right now. Try again in a few minutes.",
 
   // collateral
@@ -110,6 +111,47 @@ function fromRevert(name: string, args: Args | undefined): Explained {
     code: name,
     message: message ? message(args ?? []) : `The transaction would fail (${name}).`,
   };
+}
+
+/**
+ * The revert data of a call that failed inside a batch, where there is no
+ * viem error to walk: what `aggregate3` hands back for a call it let fail.
+ */
+export function explainRevertData(data: Hex): Explained {
+  try {
+    const decoded = decodeErrorResult({ abi: farmentaErrorsAbi, data });
+    return fromRevert(decoded.errorName, decoded.args as Args | undefined);
+  } catch {
+    return {
+      code: "UnknownRevert",
+      message: data === "0x" ? "The call would fail." : `The call would fail (${data.slice(0, 10)}).`,
+    };
+  }
+}
+
+/** What the wording of an error depends on, of the pool it came from. `CollateralPool` is one. */
+export type PoolInWords = {
+  base: { symbol: string };
+  feedHours: "always" | "us-stock-market";
+};
+
+/**
+ * The same error in the words of the pool it came from, where they differ.
+ *
+ * A stale price is a feed that stopped for every token but a stock: a stock's
+ * feed follows the US stock market and is quiet every weekend, for longer than
+ * the 25 hours the oracle accepts. Trying again in a moment does not help
+ * there, and the pool opens again by itself when the market does.
+ */
+export function explainForPool(explained: Explained, pool: PoolInWords | null | undefined): Explained {
+  if (!pool) return explained;
+  if (explained.code === "StalePrice" && pool.feedHours === "us-stock-market") {
+    return {
+      code: explained.code,
+      message: `${pool.base.symbol}'s price feed follows the US stock market, and its last price is more than 25 hours old: the stock market is closed, as it is every weekend. Borrowing, depositing, and withdrawing collateral that still has a loan against it open again when the stock market does. Repaying works at any time.`,
+    };
+  }
+  return explained;
 }
 
 /** Turns anything a simulation, a signature request or a send can throw into an `Explained`. */

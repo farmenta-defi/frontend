@@ -7,8 +7,9 @@ import type { ReactNode } from "react";
 import { buttonClasses } from "@/components/ui/button";
 import { parseAmount, sanitizeAmount } from "@/components/ui/field";
 import { chain } from "@/lib/chain";
-import { fmtUsdExact } from "@/lib/markets";
+import { fmtUsdExact } from "@/lib/format";
 import type { Step } from "@/lib/onchain/actions";
+import { explainForPool, type PoolInWords } from "@/lib/onchain/errors";
 import type { Gate } from "@/lib/onchain/gates";
 import type { ActionState, Session } from "@/lib/onchain/hooks";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,9 @@ const BLOCKED: Record<string, string> = {
   OutstandingDebt: "Repay the loan first",
   NoDebt: "Nothing to repay",
   StalePrice: "Price unavailable",
+  InvalidPrice: "Price unavailable",
+  MemeTwapUnavailable: "Price unavailable",
+  MemeSpotUnavailable: "Price unavailable",
   PriceUnavailable: "Price unavailable",
 };
 
@@ -183,8 +187,21 @@ export function ActionButton({
 /**
  * The line under the button: why it is blocked, where a running action is,
  * and how it ended. A reason to stop is warm; progress and success are not.
+ *
+ * `pool` is the pool the action is about, where there is one: a reason that
+ * reads differently for it is given in its words (`explainForPool`).
  */
-export function ActionNote({ session, gate, state }: { session: Session; gate: Gate; state: ActionState }) {
+export function ActionNote({
+  session,
+  gate,
+  state,
+  pool,
+}: {
+  session: Session;
+  gate: Gate;
+  state: ActionState;
+  pool?: PoolInWords | null;
+}) {
   const line = "px-1 text-[11px] leading-[17px]";
 
   if (state.status === "running") {
@@ -197,7 +214,7 @@ export function ActionNote({ session, gate, state }: { session: Session; gate: G
   if (state.status === "failed") {
     return (
       <p role="alert" className={cn(line, "text-warn")}>
-        {state.error.message}
+        {explainForPool(state.error, pool).message}
       </p>
     );
   }
@@ -220,7 +237,7 @@ export function ActionNote({ session, gate, state }: { session: Session; gate: G
           </a>
         </p>
       )}
-      {refused && !quiet && <p className={cn(line, "text-warn")}>{refused.message}</p>}
+      {refused && !quiet && <p className={cn(line, "text-warn")}>{explainForPool(refused, pool).message}</p>}
     </>
   );
 }
