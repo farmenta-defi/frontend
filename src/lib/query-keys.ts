@@ -6,7 +6,7 @@ import type { MarketTier } from "./risk-params";
 /**
  * Query keys, in one place for the two sources a page reads from.
  *
- * `backend` is the data layer's (FAR-71): what is shown, up to 30 seconds old.
+ * `backend` is the data layer's (FAR-80): what is shown, up to 30 seconds old.
  * `chain` is what a transaction is decided on, read through the browser's RPC
  * (FAR-72). Both are here so that a confirmed transaction can invalidate the
  * backend's queries by the same keys the data layer fetches them under.
@@ -16,11 +16,17 @@ import type { MarketTier } from "./risk-params";
  */
 const lower = (value: string) => value.toLowerCase();
 
+/**
+ * A history is fetched over a range, and each range is its own query. The key
+ * without a range is the prefix of them all, which is what a transaction
+ * invalidates.
+ */
 export const backendKeys = {
   all: ["backend"] as const,
-  markets: () => ["backend", "markets"] as const,
+  markets: (range?: string) => (range ? (["backend", "markets", range] as const) : (["backend", "markets"] as const)),
   pools: (tier: MarketTier) => ["backend", "pools", tier] as const,
-  pool: (poolId: Hex) => ["backend", "pool", lower(poolId)] as const,
+  pool: (poolId: Hex, range?: string) =>
+    range ? (["backend", "pool", lower(poolId), range] as const) : (["backend", "pool", lower(poolId)] as const),
   portfolio: (account: Address) => ["backend", "portfolio", lower(account)] as const,
   activity: (account: Address) => ["backend", "activity", lower(account)] as const,
 };

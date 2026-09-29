@@ -76,6 +76,15 @@ describe("invalidateAfterTransaction", () => {
       expect(stale()).toEqual(fetched.map(key));
     });
 
+    it("invalidates the history of every range a page has fetched, and no other pool's", async () => {
+      const fetched = [backendKeys.markets("1w"), backendKeys.markets("3m"), backendKeys.pool(ETH_USDG, "1m")];
+      const { queryClient, stale } = clientWith([...fetched, backendKeys.pool(WETH_USDG, "1m")]);
+
+      await invalidateAfterTransaction(queryClient, { tier: "blue-chip", account: ALICE, poolId: ETH_USDG });
+
+      expect(stale()).toEqual(fetched.map(key));
+    });
+
     it("a supply, which has no pool, still invalidates the market and the account", async () => {
       const keys = [backendKeys.markets(), backendKeys.pools("meme"), backendKeys.portfolio(ALICE)];
       const { queryClient, stale } = clientWith([...keys, backendKeys.pool(ETH_USDG)]);
