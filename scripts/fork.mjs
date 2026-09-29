@@ -46,6 +46,13 @@ export const FORK_BLOCK = 75_422_200n;
  */
 export const BEFORE_MEME_LISTINGS_BLOCK = 75_340_000n;
 
+/**
+ * 29 Sep 2026, just after the second round: all six pools are listed, and no price of a meme
+ * pool has been recorded yet (the first recording is in block 75,360,361). What a meme pool's
+ * page has to say before it has 30 minutes of prices is tested here.
+ */
+export const BEFORE_MEME_PRICES_BLOCK = 75_358_000n;
+
 /** Addresses from docs ARCHITECTURE.md §18. External contracts, not Farmenta's. */
 export const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
 export const WETH = "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73";

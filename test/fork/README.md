@@ -43,8 +43,10 @@ Time on the fork runs on from the block's. The oracle takes a recorded meme pric
 900 seconds, so a test that needs a meme pool priced records its price first, as the keeper
 does every five minutes (`recordPrice`).
 
-`unlisted.test.ts` starts a second fork, at block 75,340,000: the three blue-chip pools are
-listed there and the three meme pools are not yet.
+`earlier-blocks.test.ts` starts two more forks, one after the other, for what a page says of a
+pool that is not ready yet: at block 75,340,000 the three blue-chip pools are listed and the
+three meme pools are not, and at block 75,358,000 the meme pools are listed and none of their
+prices has been recorded.
 
 ## The same fork, for the app
 

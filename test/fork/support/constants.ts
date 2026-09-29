@@ -23,6 +23,7 @@ export const LISTED_POOLS = fork.LISTED_POOLS as Listed[];
 export const WETH_USDG_UNLISTED = fork.WETH_USDG_UNLISTED as Pool;
 export const FORK_BLOCK = fork.FORK_BLOCK;
 export const BEFORE_MEME_LISTINGS_BLOCK = fork.BEFORE_MEME_LISTINGS_BLOCK;
+export const BEFORE_MEME_PRICES_BLOCK = fork.BEFORE_MEME_PRICES_BLOCK;
 export const userKey = (label: string) => fork.forkKey(`user-${label}`);
 
 /** Uniswap v4 PositionManager, docs ARCHITECTURE.md §18. */
