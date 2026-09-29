@@ -51,7 +51,7 @@ function forkAt(block: bigint, listed: readonly { id: string }[]) {
     const { url, manifest, stop } = await startFork({ block, listed: [...listed] });
     started.fork = harnessOn(url, manifest);
     started.stop = stop;
-  }, 120_000);
+  }, 300_000);
   afterAll(() => started.stop?.());
   return () => started.fork!;
 }

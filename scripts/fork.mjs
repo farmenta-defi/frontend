@@ -149,13 +149,34 @@ const policyAbi = parseAbi(["function acceptsNewPositions(bytes32 poolId) view r
  * @returns {Promise<{ url: string, manifest: string, stop: () => void }>} `manifest` is the
  *   JSON text of deployments/mainnet.json.
  */
-export async function startFork({ port, block = FORK_BLOCK, listed = LISTED_POOLS } = {}) {
+export async function startFork(options = {}) {
   loadEnv();
   const upstream = process.env.ROBINHOOD_RPC_URL?.trim();
   if (!upstream) {
     fail("ROBINHOOD_RPC_URL is not set. Put an archive RPC for chain 4663 in .env.test.local (see test/fork/README.md)");
   }
 
+  // anvil asks the upstream RPC for the chain id and the block as it starts, and gives up
+  // when the answer is 429: a free-tier key is rate limited, more so right after another
+  // fork has read its state through it. That passes, so the start is tried again.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await startOnce(upstream, options);
+    } catch (error) {
+      if (attempt >= START_ATTEMPTS || !(error instanceof AnvilExited)) throw error;
+      console.error(`fork: ${error.message}; trying again in ${RETRY_AFTER_MS / 1000} seconds (${attempt} of ${START_ATTEMPTS})`);
+      await new Promise((next) => setTimeout(next, RETRY_AFTER_MS));
+    }
+  }
+}
+
+const START_ATTEMPTS = 4;
+const RETRY_AFTER_MS = 15_000;
+
+/** anvil stopped before it answered, which is what it does when the upstream RPC refuses it. */
+class AnvilExited extends Error {}
+
+async function startOnce(upstream, { port, block = FORK_BLOCK, listed = LISTED_POOLS }) {
   port ??= await freePort();
   const url = `http://127.0.0.1:${port}`;
   const anvil = spawn(
@@ -183,7 +204,7 @@ export async function startFork({ port, block = FORK_BLOCK, listed = LISTED_POOL
       .extend(walletActions);
 
     for (let attempt = 0; ; attempt++) {
-      if (exited !== undefined) fail(`anvil exited with code ${exited} before it was ready`);
+      if (exited !== undefined) throw new AnvilExited(`anvil exited with code ${exited} before it was ready`);
       try {
         await client.getBlockNumber();
         break;
