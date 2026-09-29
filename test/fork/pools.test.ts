@@ -19,6 +19,7 @@ import {
   PONS_USDG,
   POSITIONS,
   USDG as USDG_TOKEN,
+  WETH_USDG_UNLISTED,
 } from "./support/constants";
 import {
   blueChip,
@@ -46,6 +47,8 @@ import {
  * or the recorded 30-minute average. Each pool's terms are its own.
  */
 const USDG = 1_000_000n;
+/** ETH/USDG at fee 460, no hook: the pool the app's ETH/USDG page was for until the listed one replaced it. */
+const OLD_ETH_USDG: `0x${string}` = "0x54f7883914619af9105355bf83ed678bcf9f63560218ac61c9963b9503d0ba32";
 const MINUTE = 60;
 const HOUR = 60 * MINUTE;
 
@@ -87,9 +90,11 @@ async function holder({ pool, tokenId }: (typeof CASES)[number]) {
   return { user, refs };
 }
 
-describe("the fork", () => {
+describe("the six pools on the fork", () => {
+  isolateEachTest();
+
   describe("positive", () => {
-    it("has the six pools of the app listed, each in its market and on its own terms", async () => {
+    it("are the pools of the app, each listed in its market and on its own terms", async () => {
       expect(LISTED_POOLS.map((pool) => pool.id)).toEqual(COLLATERAL_POOLS.map((pool) => pool.poolId));
       for (const { pool, maxLtvBps, ltBps } of CASES) {
         const listed = await readPool(publicClient, blueChip.policy, pool.id);
@@ -98,11 +103,61 @@ describe("the fork", () => {
       }
     });
 
-    it("has 30 minutes of prices recorded for each meme pool, the last one fresh", async () => {
+    it("have 30 minutes of prices recorded where they are meme pools, the last one fresh", async () => {
       for (const pool of [CASHCAT_USDG, PONS_USDG, AI_USDG]) {
         await recordPrice(pool.key);
         expect(await hasAveragePrice(pool.id), pairOf(pool.id)).toBe(true);
       }
+    });
+  });
+
+  describe("negative", () => {
+    it("do not include the pools the app had a page for before: neither is listed on the chain", async () => {
+      for (const pool of [WETH_USDG_UNLISTED.id, OLD_ETH_USDG]) {
+        expect(await readPool(publicClient, blueChip.policy, pool), pool).toEqual({ status: "unlisted", terms: null });
+        expect(poolById(pool), pool).toBeNull();
+      }
+    });
+
+    it("refuse a position of a pool that is not listed, in either market", async () => {
+      const user = await newUser("borrower");
+      await givePosition(user.address, POSITIONS.unlistedPool);
+
+      for (const refs of [blueChip, meme]) {
+        const state = await readPosition(publicClient, refs, POSITIONS.unlistedPool, user.address);
+        expect(state.poolId).toBe(WETH_USDG_UNLISTED.id);
+        expect(depositCollateralGate(state)).toMatchObject({ ok: false, code: "PoolNotListed" });
+        expect(borrowGate(state, 50n * USDG)).toMatchObject({ ok: false, code: "PoolNotListed" });
+      }
+    });
+  });
+
+  describe("edge case", () => {
+    it("a position in a stock pool, where USDG is currency0, may hold the stock and no USDG", async () => {
+      await fund(blueChip);
+      const user = await newUser("borrower");
+      await givePosition(user.address, POSITIONS.metaUsdgAllMeta);
+
+      const state = await readPosition(publicClient, blueChip, POSITIONS.metaUsdgAllMeta, user.address);
+      const { amounts, inRange } = describePosition(state);
+
+      expect(state.holdings!.amount0).toBe(0n);
+      expect(amounts!.usdg).toBe(0);
+      expect(amounts!.base).toBeCloseTo(0.45305743, 6);
+      expect(inRange).toBe(false);
+      await depositCollateral(user.clients, blueChip, POSITIONS.metaUsdgAllMeta);
+      expect((await readPosition(publicClient, blueChip, POSITIONS.metaUsdgAllMeta, user.address)).place).toBe("collateral");
+    });
+
+    it("a position in the ETH pool may hold USDG and no ETH", async () => {
+      const user = await newUser("borrower");
+      await givePosition(user.address, POSITIONS.ethUsdgAboveRange);
+
+      const { amounts } = describePosition(
+        await readPosition(publicClient, blueChip, POSITIONS.ethUsdgAboveRange, user.address),
+      );
+
+      expect(amounts).toEqual({ base: 0, usdg: 199.999999 });
     });
   });
 });
@@ -224,39 +279,6 @@ describe.each(CASES)("$pool.id, $what", (listed) => {
       expect(refused.code).toBe("BorrowExceedsMaxLtv");
       expect(await nonceOf(user.address), "a transaction was sent").toBe(nonce);
       expect(await debtOf(refs.market, tokenId)).toBe(0n);
-    });
-  });
-});
-
-describe("a position that holds one token only", () => {
-  isolateEachTest();
-
-  describe("edge case", () => {
-    it("in a stock pool, where USDG is currency0, holds the stock and no USDG", async () => {
-      await fund(blueChip);
-      const user = await newUser("borrower");
-      await givePosition(user.address, POSITIONS.metaUsdgAllMeta);
-
-      const state = await readPosition(publicClient, blueChip, POSITIONS.metaUsdgAllMeta, user.address);
-      const { amounts, inRange } = describePosition(state);
-
-      expect(state.holdings!.amount0).toBe(0n);
-      expect(amounts!.usdg).toBe(0);
-      expect(amounts!.base).toBeCloseTo(0.45305743, 6);
-      expect(inRange).toBe(false);
-      await depositCollateral(user.clients, blueChip, POSITIONS.metaUsdgAllMeta);
-      expect((await readPosition(publicClient, blueChip, POSITIONS.metaUsdgAllMeta, user.address)).place).toBe("collateral");
-    });
-
-    it("in the ETH pool holds USDG and no ETH", async () => {
-      const user = await newUser("borrower");
-      await givePosition(user.address, POSITIONS.ethUsdgAboveRange);
-
-      const { amounts } = describePosition(
-        await readPosition(publicClient, blueChip, POSITIONS.ethUsdgAboveRange, user.address),
-      );
-
-      expect(amounts).toEqual({ base: 0, usdg: 199.999999 });
     });
   });
 });
