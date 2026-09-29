@@ -72,10 +72,57 @@ const marks: Record<AssetId, Mark> = {
   USDT: { src: "/usdt-logo.svg", name: "Tether" },
 };
 
-/** The ticker as written in pair strings, or null for anything unlisted. */
+/** The ticker as written in pair strings, or null for a token without a mark of its own. */
 function assetIdFor(symbol: string): AssetId | null {
   return symbol in marks ? (symbol as AssetId) : null;
 }
+
+/**
+ * Names for the listed tokens that have no artwork in `public/` yet. They are
+ * drawn as a plain disc with the ticker's first letter, which claims nobody's
+ * brand; give one an entry in `marks` when its logo is added.
+ */
+const names: Record<string, string> = {
+  META: "Meta Platforms",
+  CASHCAT: "CASHCAT",
+};
+
+/** A token's mark: its logo when there is one, a lettered disc when there is not. */
+function TokenMark({
+  symbol,
+  size,
+  notch = false,
+  className,
+}: {
+  symbol: string;
+  size: number;
+  notch?: boolean;
+  className?: string;
+}) {
+  const id = assetIdFor(symbol);
+  if (id) return <AssetMark asset={id} size={size} notch={notch} className={className} />;
+  return (
+    <span className={cn("inline-flex shrink-0 items-center", className)}>
+      <span
+        aria-hidden
+        className="flex items-center justify-center rounded-full bg-steel-600 font-semibold leading-none text-foreground"
+        style={{
+          width: size,
+          height: size,
+          fontSize: Math.round(size * 0.46),
+          boxShadow: notch ? `0 0 0 2px ${GROUND}` : undefined,
+        }}
+      >
+        {symbol.slice(0, 1)}
+      </span>
+    </span>
+  );
+}
+
+const nameOf = (symbol: string) => {
+  const id = assetIdFor(symbol);
+  return id ? marks[id].name : (names[symbol] ?? symbol);
+};
 
 /**
  * @param label Renders the name for assistive tech. Leave off when a visible
@@ -135,15 +182,13 @@ export function AssetPair({
   className?: string;
 }) {
   const [base, quote] = pair.split("/");
-  const baseId = assetIdFor(base);
-  const quoteId = assetIdFor(quote);
-  if (!baseId || !quoteId) return null;
+  if (!base || !quote) return null;
 
-  const names = [marks[baseId].name, marks[quoteId].name].join(" / ");
+  const label = [nameOf(base), nameOf(quote)].join(" / ");
   return (
     <span className={cn("group/pair relative inline-flex shrink-0 items-center", className)}>
-      <AssetMark
-        asset={baseId}
+      <TokenMark
+        symbol={base}
         size={size}
         className="transition-transform duration-200 group-hover/pair:-translate-x-[2px]"
       />
@@ -153,7 +198,7 @@ export function AssetPair({
         className="inline-flex transition-transform duration-200 group-hover/pair:translate-x-[2px]"
         style={{ marginLeft: -Math.round(size / 4) }}
       >
-        <AssetMark asset={quoteId} size={size} notch />
+        <TokenMark symbol={quote} size={size} notch />
       </span>
       <span
         role="tooltip"
@@ -161,7 +206,7 @@ export function AssetPair({
         // is always a header row overhead but not always a row underneath.
         className="pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden whitespace-nowrap rounded-lg border border-border bg-[#292a2c] px-2 py-1 text-[11px] font-normal text-foreground shadow-xl group-hover/pair:block"
       >
-        {names}
+        {label}
         {hint && <span className="text-steel-400"> · {hint}</span>}
       </span>
     </span>
