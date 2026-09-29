@@ -7,15 +7,38 @@ import { AddressMark } from "@/components/ui/address-mark";
 import { AssetMark } from "@/components/ui/asset-mark";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { shortAddress } from "@/lib/format";
-import type { CollateralPool } from "@/lib/markets";
-import {
-  fmtTimestampUtc,
-  MOCK_AS_OF,
-  MOCK_USDG_PRICE,
-  POOL_TX_TYPES,
-  poolTransactions,
-  type PoolTxType,
-} from "@/lib/pool-history";
+
+/**
+ * The table of a pool's transactions. No page renders it: the backend has no
+ * route for a pool's activity yet (FAR-85), and the list this table used to
+ * show was generated. It is given its rows and makes none up, so it comes
+ * back on the pool's page as soon as there are rows to give it (FAR-71).
+ *
+ * The kinds below are the ones the generated list had. The route will send a
+ * pool's own events, collateral, loans, repayments and liquidations, and not
+ * the lenders' supplies and withdrawals, which belong to the market; the kinds
+ * change with it.
+ */
+export const POOL_TX_TYPES = ["Supply", "Withdraw", "Borrow", "Repay"] as const;
+export type PoolTxType = (typeof POOL_TX_TYPES)[number];
+
+export type PoolTx = {
+  id: string;
+  /** Milliseconds since the epoch. */
+  t: number;
+  type: PoolTxType;
+  /** USDG. */
+  amount: number;
+  user: `0x${string}`;
+};
+
+const two = (n: number) => String(n).padStart(2, "0");
+
+/** "2026-09-27 15:34:25", always UTC so every reader sees the same instant. */
+const fmtTimestampUtc = (t: number) => {
+  const d = new Date(t);
+  return `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`;
+};
 
 const PAGE_SIZE = 10;
 const DAY_MS = 86_400_000;
@@ -46,12 +69,6 @@ const TYPES: readonly { id: TypeFilter; label: string }[] = [
 const amountLabel = (amount: number) =>
   amount.toLocaleString("en-US", { maximumFractionDigits: 3 });
 
-const usdLabel = (amount: number) =>
-  `$${(amount * MOCK_USDG_PRICE).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-
 function PageButton({
   label,
   disabled,
@@ -76,18 +93,22 @@ function PageButton({
   );
 }
 
-/** Every supply, withdrawal, loan, and repayment, newest first. */
-export function PoolActivity({ pool }: { pool: CollateralPool }) {
+/** The transactions it is given, newest first, a page at a time. */
+export function PoolActivity({
+  transactions,
+  asOf,
+}: {
+  transactions: readonly PoolTx[];
+  /** The instant the periods are counted back from: when the list was read. */
+  asOf: number;
+}) {
   const [period, setPeriod] = useState<Period>("all");
   const [type, setType] = useState<TypeFilter>("all");
   const [page, setPage] = useState(0);
 
   const rows = useMemo(
-    () =>
-      poolTransactions(pool).filter(
-        (tx) => MOCK_AS_OF - tx.t <= PERIOD_MS[period] && (type === "all" || tx.type === type),
-      ),
-    [pool, period, type],
+    () => transactions.filter((tx) => asOf - tx.t <= PERIOD_MS[period] && (type === "all" || tx.type === type)),
+    [transactions, asOf, period, type],
   );
 
   const pages = Math.max(Math.ceil(rows.length / PAGE_SIZE), 1);
@@ -151,9 +172,6 @@ export function PoolActivity({ pool }: { pool: CollateralPool }) {
                   <span className="flex items-center gap-2 whitespace-nowrap">
                     <AssetMark asset="USDG" size={18} />
                     {amountLabel(tx.amount)} USDG
-                    <span className="rounded-md bg-white/[0.07] px-1.5 py-0.5 text-[11.5px] text-steel-300">
-                      {usdLabel(tx.amount)}
-                    </span>
                   </span>
                 </td>
                 <td className="px-5 py-3.5 sm:px-6">

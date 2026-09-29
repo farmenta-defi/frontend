@@ -105,8 +105,9 @@ export default async function MarketDetailPage({ params }: { params: Promise<Rou
             />
           </div>
 
-          {/* No list of transactions: the backend has no route for a pool's activity yet, and
-              the page shows nothing it cannot read (decided by the product owner, 29 Sep 2026). */}
+          {/* No list of transactions: the backend has no route for a pool's activity yet (FAR-85),
+              and the page shows nothing it cannot read (decided by the product owner, 29 Sep 2026).
+              The table is kept, in pool-activity.tsx, for when there are rows to give it. */}
           <div className="mt-12 space-y-12">
             <section aria-labelledby="market-history">
               <SectionHeading id="market-history">Market</SectionHeading>
