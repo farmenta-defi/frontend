@@ -17,6 +17,7 @@ const inWallet = (over: Partial<PositionState> = {}): PositionState => ({
   ticks: { tickLower: -198_599, tickUpper: -197_699 },
   decimals: [18, 6],
   holdings: { amount0: 2n * 10n ** 17n, amount1: 500_000_000n, principalUsd: 1_000n * WAD, feesUsd: 25n * WAD },
+  holdingsError: null,
   pool: { status: "open", terms: { maxLtvBps: 6500, ltBps: 7500 } },
   paused: false,
   debt: 0n,

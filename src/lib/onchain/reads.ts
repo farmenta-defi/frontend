@@ -4,6 +4,7 @@ import {
   erc20Abi,
   multicall3Abi,
   zeroAddress,
+  type Abi,
   type Account,
   type Address,
   type Chain,
@@ -17,8 +18,8 @@ import { chain } from "@/lib/chain";
 
 import { positionValuerAbi } from "@/abis/PositionValuer";
 
-import { lensAbi, marketAbi, policyAbi, poolIdOf, positionsAbi, type PoolKey } from "./contracts";
-import { explainError, type Explained } from "./errors";
+import { lensAbi, marketAbi, oracleAbi, policyAbi, poolIdOf, positionsAbi, type PoolKey } from "./contracts";
+import { explainError, explainRevertData, type Explained } from "./errors";
 import { isNative, ticksOf } from "./range";
 
 /**
@@ -148,6 +149,92 @@ export async function readCurrentDebt(
   return decodeFunctionResult({ ...debtOf, data: debt.returnData });
 }
 
+type ViewCall = { address: Address; abi: readonly unknown[]; functionName: string; args: readonly unknown[] };
+
+/**
+ * Reads `calls` as the market's next transaction would find them: after the
+ * pool's price is recorded.
+ *
+ * The market records a meme pool's price itself at the start of a deposit and
+ * of a loan, and values the position after that. A plain read sees the prices
+ * as they were recorded last, so once the keeper has been quiet for 900
+ * seconds it finds no average price, where the transaction would record one
+ * and go through. Here `PriceOracle.record` and the reads run inside one
+ * `eth_call` through Multicall3. Nothing is sent; the recording exists only
+ * in the simulation. For a pool that is not a meme pool `record` does nothing.
+ *
+ * Each answer is the decoded result, or the error the call reverted with.
+ */
+async function readAfterRecording(
+  client: ReadClient,
+  oracle: Address,
+  key: PoolKey,
+  calls: readonly ViewCall[],
+  blockNumber: bigint,
+): Promise<({ ok: true; result: unknown } | { ok: false; error: Explained })[] | null> {
+  const multicall = chain.contracts?.multicall3?.address;
+  if (!multicall) return null;
+
+  const record = encodeFunctionData({ abi: oracleAbi, functionName: "record", args: [key] });
+  const { result } = await client.simulateContract({
+    address: multicall,
+    abi: multicall3Abi,
+    functionName: "aggregate3",
+    args: [
+      [
+        { target: oracle, allowFailure: true, callData: record },
+        ...calls.map((call) => ({
+          target: call.address,
+          allowFailure: true,
+          callData: encodeFunctionData({ abi: call.abi as Abi, functionName: call.functionName, args: call.args }),
+        })),
+      ],
+    ],
+    blockNumber,
+  });
+  const [, ...answers] = result as readonly { success: boolean; returnData: Hex }[];
+  return answers.map((answer, index) =>
+    answer.success
+      ? {
+          ok: true,
+          result: decodeFunctionResult({
+            abi: calls[index].abi as Abi,
+            functionName: calls[index].functionName,
+            data: answer.returnData,
+          }),
+        }
+      : { ok: false, error: explainRevertData(answer.returnData) },
+  );
+}
+
+/**
+ * Reads `calls`, all or nothing. When they fail for want of a meme pool's
+ * average price, they are read again as the next transaction would find them.
+ */
+async function readPriced<T extends readonly unknown[]>(
+  client: ReadClient,
+  oracle: Address,
+  key: PoolKey,
+  calls: readonly ViewCall[],
+  blockNumber: bigint,
+): Promise<{ values: T; error: null } | { values: null; error: Explained }> {
+  try {
+    const values = await Promise.all(
+      calls.map((call) => client.readContract({ ...call, abi: call.abi as Abi, blockNumber })),
+    );
+    return { values: values as unknown as T, error: null };
+  } catch (thrown) {
+    const error = explainError(thrown);
+    if (error.code !== "MemeTwapUnavailable") return { values: null, error };
+
+    const answers = await readAfterRecording(client, oracle, key, calls, blockNumber).catch(() => null);
+    if (!answers) return { values: null, error };
+    const failed = answers.find((answer) => !answer.ok);
+    if (failed && !failed.ok) return { values: null, error: failed.error };
+    return { values: answers.map((answer) => (answer.ok ? answer.result : null)) as unknown as T, error: null };
+  }
+}
+
 /** Where a position NFT is, from the point of view of `account`. */
 export type PositionPlace =
   /** In `account`'s wallet: it can be deposited. */
@@ -195,6 +282,12 @@ export type PositionState = {
   decimals: readonly [number, number] | null;
   /** Absent when the valuer cannot price the position: a pool whose tokens have no feed, a stale feed. */
   holdings: PositionHoldings | null;
+  /**
+   * Why `holdings` is absent. The market values a position with the same
+   * valuer when it is deposited, so a position that cannot be valued cannot
+   * be deposited, for this reason.
+   */
+  holdingsError: Explained | null;
   pool: { status: PoolStatus; terms: PoolTerms | null };
   paused: boolean;
   /** USDG owed as of now. Zero unless `place` is "collateral". */
@@ -217,11 +310,11 @@ export async function readPosition(
   const blockNumber = await latestBlock(client);
   const at = { blockNumber } as const;
   const market = { address: refs.market, abi: marketAbi, ...at } as const;
-  const lens = { address: refs.lens, abi: lensAbi, ...at } as const;
 
-  const [positionManager, valuer, asset, paused, loan] = await Promise.all([
+  const [positionManager, valuer, oracle, asset, paused, loan] = await Promise.all([
     client.readContract({ ...market, functionName: "positionManager" }),
     client.readContract({ ...market, functionName: "valuer" }),
+    client.readContract({ ...market, functionName: "oracle" }),
     client.readContract({ ...market, functionName: "asset" }),
     client.readContract({ ...market, functionName: "paused" }),
     client.readContract({ ...market, functionName: "loanOf", args: [tokenId] }),
@@ -246,6 +339,7 @@ export async function readPosition(
       ticks: null,
       decimals: null,
       holdings: null,
+      holdingsError: null,
       pool: { status: "unlisted", terms: null },
     };
   }
@@ -257,17 +351,29 @@ export async function readPosition(
     isNative(currency)
       ? Promise.resolve(18)
       : client.readContract({ address: currency, abi: erc20Abi, functionName: "decimals", ...at });
-  const [pool, decimals0, decimals1, holdings] = await Promise.all([
+  const [pool, decimals0, decimals1, valued] = await Promise.all([
     readPool(client, refs.policy, poolId, blockNumber),
     decimalsOf(poolKey.currency0),
     decimalsOf(poolKey.currency1),
-    client
-      .readContract({ address: valuer, abi: [...positionValuerAbi], functionName: "value", args: [tokenId], ...at })
-      .then(({ amount0, amount1, principalUsd, feesUsd }) => ({ amount0, amount1, principalUsd, feesUsd }))
-      // Shown without a value rather than not shown.
-      .catch(() => null),
+    readPriced<[PositionHoldings]>(
+      client,
+      oracle,
+      poolKey,
+      [{ address: valuer, abi: positionValuerAbi, functionName: "value", args: [tokenId] }],
+      blockNumber,
+    ),
   ]);
-  const base = { ...none, ticks: ticksOf(info), decimals: [decimals0, decimals1] as const, holdings };
+  // Shown without a value rather than not shown, and with the reason.
+  const holdings = valued.values
+    ? (({ amount0, amount1, principalUsd, feesUsd }) => ({ amount0, amount1, principalUsd, feesUsd }))(valued.values[0])
+    : null;
+  const base = {
+    ...none,
+    ticks: ticksOf(info),
+    decimals: [decimals0, decimals1] as const,
+    holdings,
+    holdingsError: valued.error,
+  };
 
   const same = (a: Address, b: Address) => a.toLowerCase() === b.toLowerCase();
   const place: PositionPlace = same(holder, account)
@@ -278,15 +384,21 @@ export async function readPosition(
   if (place !== "collateral") return { ...base, place, poolId, poolKey, pool };
 
   const debt = await readCurrentDebt(client, refs.market, tokenId, blockNumber);
-  try {
-    const [positionValue, maxBorrow, healthFactor] = await Promise.all([
-      client.readContract({ ...lens, functionName: "positionValue", args: [tokenId] }),
-      client.readContract({ ...lens, functionName: "maxBorrow", args: [tokenId] }),
-      client.readContract({ ...lens, functionName: "healthFactor", args: [tokenId] }),
-    ]);
-    return { ...base, place, poolId, poolKey, pool, debt, risk: { positionValue, maxBorrow, healthFactor } };
-  } catch (error) {
-    // The debt is still known, so repaying and withdrawing stay possible without a price.
-    return { ...base, place, poolId, poolKey, pool, debt, riskError: explainError(error) };
-  }
+  const view = { address: refs.lens, abi: lensAbi, args: [tokenId] } as const;
+  const risk = await readPriced<[bigint, bigint, bigint]>(
+    client,
+    oracle,
+    poolKey,
+    [
+      { ...view, functionName: "positionValue" },
+      { ...view, functionName: "maxBorrow" },
+      { ...view, functionName: "healthFactor" },
+    ],
+    blockNumber,
+  );
+  // The debt is still known, so repaying and withdrawing stay possible without a price.
+  if (!risk.values) return { ...base, place, poolId, poolKey, pool, debt, riskError: risk.error };
+
+  const [positionValue, maxBorrow, healthFactor] = risk.values;
+  return { ...base, place, poolId, poolKey, pool, debt, risk: { positionValue, maxBorrow, healthFactor } };
 }

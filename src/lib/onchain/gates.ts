@@ -70,6 +70,11 @@ export function depositCollateralGate(position: PositionState, poolId?: Hex): Ga
       "This pool is frozen: it takes no new collateral. Positions already deposited can still be repaid and withdrawn.",
     );
   }
+  // The market values a position when it takes it, with the valuer these holdings were read
+  // from. What cannot be valued is refused, and the permit is not asked for.
+  if (!position.holdings && position.holdingsError) {
+    return refuse(position.holdingsError.code, position.holdingsError.message);
+  }
   return OPEN;
 }
 
@@ -79,6 +84,10 @@ const notCollateral = (position: PositionState) =>
     : refuse("NotTheDepositor", "This position is not deposited as your collateral.");
 
 export function borrowGate(position: PositionState, amount: Amount): Gate {
+  // Before anything about the loan: a pool that is not listed lends to nobody.
+  if (position.place !== "missing" && position.pool.status === "unlisted") {
+    return refuse("PoolNotListed", "This pool is not listed on Farmenta, so nothing can be borrowed against its positions.");
+  }
   const refused = notCollateral(position);
   if (refused) return refused;
   if (position.paused) return PAUSED("borrowing");
