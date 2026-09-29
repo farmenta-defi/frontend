@@ -349,6 +349,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
         session={session}
         gate={gate.ok || ["NoPosition", "Loading", "PositionsUnavailable"].includes(gate.code) ? { ok: true } : gate}
         state={action.state}
+        pool={pool}
       />
     </>
   );
