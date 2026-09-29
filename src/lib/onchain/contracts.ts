@@ -5,6 +5,7 @@ import { farmentaErrorsAbi } from "@/abis/FarmentaErrors";
 import { farmentaMarketAbi } from "@/abis/FarmentaMarket";
 import { marketLensAbi } from "@/abis/MarketLens";
 import { positionManagerAbi } from "@/abis/PositionManager";
+import { priceOracleAbi } from "@/abis/PriceOracle";
 
 /**
  * The ABIs the app calls with, each carrying every custom error a call can
@@ -17,6 +18,7 @@ export const marketAbi = [...farmentaMarketAbi, ...farmentaErrorsAbi] as const;
 export const lensAbi = [...marketLensAbi, ...farmentaErrorsAbi] as const;
 export const policyAbi = [...collateralPolicyAbi, ...farmentaErrorsAbi] as const;
 export const positionsAbi = [...positionManagerAbi, ...farmentaErrorsAbi] as const;
+export const oracleAbi = [...priceOracleAbi, ...farmentaErrorsAbi] as const;
 
 export type PoolKey = {
   currency0: Address;

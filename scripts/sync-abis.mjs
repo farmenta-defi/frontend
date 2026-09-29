@@ -48,6 +48,7 @@ const TARGETS = {
       "repay",
       "withdrawCollateral",
       // wiring and state
+      "oracle",
       "paused",
       "policy",
       "positionManager",
@@ -60,6 +61,12 @@ const TARGETS = {
   PositionValuer: {
     artifacts: ["PositionValuer.sol/PositionValuer.json"],
     functions: ["value"],
+  },
+  PriceOracle: {
+    artifacts: ["PriceOracle.sol/PriceOracle.json"],
+    // Never sent: run inside an `eth_call` ahead of a read, to price a meme position the way
+    // the transaction will, which records the pool's price before it values anything.
+    functions: ["record"],
   },
   MarketLens: {
     artifacts: ["MarketLens.sol/MarketLens.json"],
