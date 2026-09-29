@@ -5,10 +5,9 @@ import { useMemo, useState } from "react";
 import { TimeSeriesChart } from "@/components/app/time-series-chart";
 import { Segmented } from "@/components/ui/segmented";
 import { SelectMenu } from "@/components/ui/select-menu";
+import { compactParts, compactTick } from "@/lib/format";
 import type { CollateralPool } from "@/lib/markets";
 import {
-  compactParts,
-  compactTick,
   HISTORY_RANGES,
   MOCK_USDG_PRICE,
   poolBalanceHistory,

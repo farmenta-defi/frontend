@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { buttonClasses } from "@/components/ui/button";
 import { parseAmount, sanitizeAmount } from "@/components/ui/field";
 import { chain } from "@/lib/chain";
-import { fmtUsdExact } from "@/lib/markets";
+import { fmtUsdExact } from "@/lib/format";
 import type { Step } from "@/lib/onchain/actions";
 import type { Gate } from "@/lib/onchain/gates";
 import type { ActionState, Session } from "@/lib/onchain/hooks";

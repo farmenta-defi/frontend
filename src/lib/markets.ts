@@ -223,12 +223,6 @@ export const findPool = (network: string, tier: string, poolId: string, slug: st
       pool.poolId.toLowerCase() === poolId.toLowerCase(),
   ) ?? null;
 
-export const fmtUsd = (n: number) =>
-  `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-
-export const fmtUsdExact = (n: number) =>
-  `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
 const compact = (n: number) => {
   const millions = n >= 1_000_000;
   return { figure: (n / (millions ? 1_000_000 : 1_000)).toFixed(2), unit: millions ? "M" : "K" };
@@ -248,6 +242,3 @@ export const compactUsdgParts = (n: number) => {
   const { figure, unit } = compact(n);
   return { value: `$${figure}`, unit, inToken: `${figure}${unit} USDG` };
 };
-
-export const fmtUsdg = (n: number) =>
-  n.toLocaleString("en-US", { maximumFractionDigits: 2 });

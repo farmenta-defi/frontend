@@ -247,21 +247,6 @@ export const poolTransactions = (pool: CollateralPool): PoolTx[] => {
 /* Formatting                                                          */
 /* ------------------------------------------------------------------ */
 
-/** "4.10" + "K", split so a headline can set the magnitude back a shade. */
-export const compactParts = (n: number) => {
-  if (n >= 1_000_000) return { figure: (n / 1_000_000).toFixed(2), unit: "M" };
-  if (n >= 1_000) return { figure: (n / 1_000).toFixed(2), unit: "K" };
-  return { figure: n.toFixed(2), unit: "" };
-};
-
-/** Axis density: "$2K", "$1.5M", "$500". */
-export const compactTick = (n: number) => {
-  const trim = (value: number) => String(Number(value.toFixed(2)));
-  if (n >= 1_000_000) return `${trim(n / 1_000_000)}M`;
-  if (n >= 1_000) return `${trim(n / 1_000)}K`;
-  return trim(n);
-};
-
 const two = (n: number) => String(n).padStart(2, "0");
 
 /** "2026-09-27 15:34:25", always UTC so every reader sees the same instant. */
@@ -269,5 +254,3 @@ export const fmtTimestampUtc = (t: number) => {
   const d = new Date(t);
   return `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`;
 };
-
-export const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;

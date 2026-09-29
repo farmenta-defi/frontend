@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { AddressMark } from "@/components/ui/address-mark";
 import { AssetMark } from "@/components/ui/asset-mark";
 import { SelectMenu } from "@/components/ui/select-menu";
+import { shortAddress } from "@/lib/format";
 import type { CollateralPool } from "@/lib/markets";
 import {
   fmtTimestampUtc,
@@ -13,7 +14,6 @@ import {
   MOCK_USDG_PRICE,
   POOL_TX_TYPES,
   poolTransactions,
-  shortAddress,
   type PoolTxType,
 } from "@/lib/pool-history";
 

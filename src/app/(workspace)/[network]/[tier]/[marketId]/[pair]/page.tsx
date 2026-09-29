@@ -11,14 +11,8 @@ import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { Badge } from "@/components/ui/badge";
 import { InfoList, InfoRow } from "@/components/ui/field";
 import { Tabs } from "@/components/ui/tabs";
-import {
-  COLLATERAL_POOLS,
-  compactUsdgParts,
-  fmtUsd,
-  findPool,
-  MARKETS,
-  NETWORKS,
-} from "@/lib/markets";
+import { fmtUsd } from "@/lib/format";
+import { COLLATERAL_POOLS, compactUsdgParts, findPool, MARKETS, NETWORKS } from "@/lib/markets";
 import { RISK_PARAMS } from "@/lib/risk-params";
 
 /**

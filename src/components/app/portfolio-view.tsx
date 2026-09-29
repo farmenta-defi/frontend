@@ -15,8 +15,8 @@ import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import { Tabs } from "@/components/ui/tabs";
 import { chain as farmentaChain } from "@/lib/chain";
 import { deployment, NOT_DEPLOYED } from "@/lib/deployment";
+import { shortAddress } from "@/lib/format";
 import { MARKETS, NETWORKS } from "@/lib/markets";
-import { shortAddress } from "@/lib/pool-history";
 import type { MarketTier } from "@/lib/risk-params";
 import { usdgToNumber } from "@/lib/units";
 

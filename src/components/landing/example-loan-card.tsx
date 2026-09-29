@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { Badge, Dot } from "@/components/ui/badge";
 import { HealthBar, hfLabel, hfTone } from "@/components/ui/health-bar";
-import { fmtUsd, fmtUsdg } from "@/lib/markets";
+import { fmtUsd, fmtUsdg } from "@/lib/format";
 import { RISK_PARAMS } from "@/lib/risk-params";
 import { cn } from "@/lib/utils";
 

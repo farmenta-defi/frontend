@@ -7,7 +7,8 @@ import { PositionPicker, usePoolPositions } from "@/components/app/position-pick
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { HealthBar, hfLabel, hfTone } from "@/components/ui/health-bar";
 import { Segmented } from "@/components/ui/segmented";
-import { fmtUsd, fmtUsdg, MARKETS, NETWORKS, type CollateralPool } from "@/lib/markets";
+import { fmtUsd, fmtUsdg } from "@/lib/format";
+import { MARKETS, NETWORKS, type CollateralPool } from "@/lib/markets";
 import { borrow, depositCollateral, repay, supply, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
 import {
   borrowGate,

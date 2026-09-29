@@ -3,7 +3,8 @@
 import { useMemo } from "react";
 
 import { buttonClasses } from "@/components/ui/button";
-import { fmtUsd, type CollateralPool } from "@/lib/markets";
+import { fmtUsd } from "@/lib/format";
+import type { CollateralPool } from "@/lib/markets";
 import { describePosition } from "@/lib/onchain/describe";
 import { inPool } from "@/lib/onchain/discovery";
 import { listState, unreadNote, type ListStatus } from "@/lib/onchain/list-status";
