@@ -10,10 +10,7 @@ import {
   type PointerEvent,
 } from "react";
 
-import { valueAxis } from "@/lib/chart-axis";
-
-/** One sample: when, as milliseconds since the epoch, and how much. */
-export type SeriesPoint = { t: number; v: number };
+import { valueAxis, type SeriesPoint } from "@/lib/chart-axis";
 
 const HEIGHT = 248;
 const PAD_TOP = 14;

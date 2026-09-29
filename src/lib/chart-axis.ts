@@ -6,6 +6,9 @@
  * supplied to yet. It gets an axis of its own rather than a division by zero,
  * and its line runs along the bottom.
  */
+/** One sample of a series: when, as milliseconds since the epoch, and how much. */
+export type SeriesPoint = { t: number; v: number };
+
 export type ValueAxis = {
   /** The value at the top of the plot. Never zero. */
   top: number;
