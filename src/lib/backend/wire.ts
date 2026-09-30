@@ -1,11 +1,13 @@
 /**
  * What the backend sends, field for field, and the check that an answer has
- * that shape. Nothing here is a figure to show yet: `./figures` converts.
+ * that shape. Nothing here is a figure to show yet: `./figures` and
+ * `./activity` convert.
  *
  * The shape is the backend's (spec §13, routes in `src/markets/markets.controller.ts`
- * of the `backend` repo). An amount is a decimal string of base units with the
- * unit in the field's name, a percentage is a string with two decimals, and
- * `null` is a figure the backend does not have.
+ * and `src/activity/activity.controller.ts` of the `backend` repo). An amount
+ * is a decimal string of base units with the unit in the field's name, a
+ * percentage is a string with two decimals, and `null` is a figure the backend
+ * does not have.
  */
 
 /** One reading of a market: the latest, or one step of its history. */
@@ -64,6 +66,35 @@ export type WirePool = WireListedPool & {
   borrowAprPct: string | null;
   rate6hPct: string | null;
   history: WireSnapshot[];
+};
+
+/**
+ * One row of a wallet's history, as `GET /activity/:address` sends it: one
+ * log of a market. The fields below are on every row. The rest depend on
+ * `category` and `kind`, and `./activity` reads them:
+ * - `vault`, the lender's side: `kind` ("deposit", "withdraw", "transfer"),
+ *   `assetsUsdg` (`null` for a transfer, which moves shares only), `shares`
+ * - `loan`, the borrower's side: `kind`, `tokenId`, `owner`, and `amountUsdg`
+ *   for "borrow" and "repay" only
+ * - `liquidation`: `tokenId`, `full`, `repaidUsdg`, `badDebtUsdg`
+ */
+export type WireActivityRow = {
+  category: string;
+  market: string;
+  blockNumber: string;
+  logIndex: number;
+  /** The block's, in seconds since the epoch. */
+  timestamp: string;
+  transactionHash: string;
+  [field: string]: unknown;
+};
+
+/** One page of a wallet's history, newest first. */
+export type WireActivity = {
+  items: WireActivityRow[];
+  /** `blockNumber:logIndex` of the last row, to ask for the rows after it. Sent on the last page too. */
+  nextCursor: string | null;
+  hasMore: boolean;
 };
 
 type Fields = Record<string, unknown>;
@@ -144,6 +175,28 @@ function isPool(value: unknown): value is WirePool {
   );
 }
 
+function isActivityRow(value: unknown): value is WireActivityRow {
+  if (!isObject(value)) return false;
+  return (
+    isText(value.category) &&
+    isText(value.market) &&
+    isText(value.blockNumber) &&
+    isNumber(value.logIndex) &&
+    isText(value.timestamp) &&
+    isText(value.transactionHash)
+  );
+}
+
+function isActivity(value: unknown): value is WireActivity {
+  if (!isObject(value)) return false;
+  return (
+    Array.isArray(value.items) &&
+    value.items.every(isActivityRow) &&
+    textOrNull(value.nextCursor) &&
+    typeof value.hasMore === "boolean"
+  );
+}
+
 /** Each returns the answer typed, or `null` when it does not have the shape. */
 export const readMarkets = (body: unknown): WireMarket[] | null =>
   Array.isArray(body) && body.every(isMarket)
@@ -154,3 +207,5 @@ export const readListedPools = (body: unknown): WireListedPool[] | null =>
   Array.isArray(body) && body.every(isListedPool) ? body : null;
 
 export const readPool = (body: unknown): WirePool | null => (isPool(body) ? body : null);
+
+export const readActivity = (body: unknown): WireActivity | null => (isActivity(body) ? body : null);

@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { AddressMark } from "@/components/ui/address-mark";
 import { AssetMark } from "@/components/ui/asset-mark";
 import { SelectMenu } from "@/components/ui/select-menu";
-import { shortAddress } from "@/lib/format";
+import { fmtTimestampUtc, shortAddress } from "@/lib/format";
 
 /**
  * The table of a pool's transactions. No page renders it: the backend has no
@@ -30,14 +30,6 @@ export type PoolTx = {
   /** USDG. */
   amount: number;
   user: `0x${string}`;
-};
-
-const two = (n: number) => String(n).padStart(2, "0");
-
-/** "2026-09-27 15:34:25", always UTC so every reader sees the same instant. */
-const fmtTimestampUtc = (t: number) => {
-  const d = new Date(t);
-  return `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`;
 };
 
 const PAGE_SIZE = 10;

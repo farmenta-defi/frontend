@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useAccount } from "wagmi";
 
+import { WalletActivity } from "@/components/app/portfolio-activity";
 import { BorrowPositions, SupplyPosition, useDeposit } from "@/components/app/portfolio-positions";
 import { AddressMark } from "@/components/ui/address-mark";
 import { AssetMark, type AssetId } from "@/components/ui/asset-mark";
@@ -31,6 +32,9 @@ import { usdgToNumber } from "@/lib/units";
  * and the loans on the positions this browser knows for it. Without a
  * deployment there is nothing to read, and the page says so rather than
  * filling itself with invented positions.
+ *
+ * What the wallet did is read from the backend: the Activity tab lists its
+ * transactions (`./portfolio-activity`).
  */
 
 const emptySubscribe = () => () => {};
@@ -301,11 +305,14 @@ function Positions({ connected }: { connected: boolean }) {
 }
 
 function Activity({ connected }: { connected: boolean }) {
+  const { address } = useAccount();
   return (
     <div className="pt-5">
-      <EmptyList>
-        {connected ? "No transactions yet." : "Connect a wallet to see its activity."}
-      </EmptyList>
+      {connected && address ? (
+        <WalletActivity account={address} empty={<EmptyList>No transactions yet.</EmptyList>} />
+      ) : (
+        <EmptyList>Connect a wallet to see its activity.</EmptyList>
+      )}
     </div>
   );
 }

@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "market": "0x1f69d27f1ac7415a4252957951900130cb885484",
+      "blockNumber": "76253701",
+      "logIndex": 9,
+      "timestamp": "1790744920",
+      "transactionHash": "0xfe7d0978e9bc7410d4002fff7a049557ead23c8b1be8af440826bd4eab51458e",
+      "kind": "deposit",
+      "assetsUsdg": "31396",
+      "shares": "31396000",
+      "category": "vault"
+    }
+  ],
+  "nextCursor": "76253701:9",
+  "hasMore": false
+}

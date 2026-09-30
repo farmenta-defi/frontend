@@ -1,12 +1,13 @@
 "use client";
 
-import { keepPreviousData, queryOptions, useQueries, useQuery } from "@tanstack/react-query";
-import type { Hex } from "viem";
+import { keepPreviousData, queryOptions, useInfiniteQuery, useQueries, useQuery } from "@tanstack/react-query";
+import type { Address, Hex } from "viem";
 
 import { backendKeys } from "@/lib/query-keys";
 import type { MarketTier } from "@/lib/risk-params";
 
-import { BackendError, fetchListedPools, fetchMarkets, fetchPool } from "./client";
+import { historyRows, type ActivityPage, type ActivityRow } from "./activity";
+import { BackendError, fetchActivity, fetchListedPools, fetchMarkets, fetchPool } from "./client";
 import type { HistoryRange, ListedPool, MarketFigures, PoolFigures } from "./figures";
 
 /**
@@ -95,4 +96,59 @@ export function usePoolsFigures(poolIds: readonly Hex[], range: HistoryRange = "
   return useQueries({ queries: poolIds.map((poolId) => poolQuery(poolId, range)) }).map((query) =>
     figuresOf<PoolFigures>(query),
   );
+}
+
+/**
+ * A wallet's history, as far as it has been read.
+ *
+ * `failed` is for a history that never came. Once rows are on screen they
+ * stay: `error` then says that the last read failed, whether it was the
+ * refresh or the next page, and the rows may be behind or stop short.
+ */
+export type WalletHistory =
+  | { status: "loading"; rows: []; error: null; hasMore: false }
+  | { status: "failed"; rows: []; error: unknown; hasMore: false }
+  | { status: "ready"; rows: ActivityRow[]; error: unknown | null; hasMore: boolean };
+
+export function historyOf(query: {
+  data: { pages: readonly ActivityPage[] } | undefined;
+  error: unknown;
+  isError: boolean;
+  hasNextPage: boolean;
+}): WalletHistory {
+  if (query.data !== undefined) {
+    return {
+      status: "ready",
+      rows: historyRows(query.data.pages),
+      error: query.isError ? query.error : null,
+      hasMore: query.hasNextPage,
+    };
+  }
+  if (query.isError) return { status: "failed", rows: [], error: query.error, hasMore: false };
+  return { status: "loading", rows: [], error: null, hasMore: false };
+}
+
+/**
+ * The connected wallet's transactions in Farmenta, newest first, a page at a
+ * time. A refresh reads every page on screen again from the first, each with
+ * the cursor of the one just read, so a new transaction pushes the rows down
+ * without losing one between two pages.
+ */
+export function useWalletActivity(account: Address) {
+  const query = useInfiniteQuery({
+    queryKey: backendKeys.activity(account),
+    queryFn: ({ pageParam, signal }) => fetchActivity(account, pageParam, { signal }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next ?? undefined,
+    ...shared,
+  });
+
+  return {
+    ...historyOf(query),
+    /** The next page is on its way. */
+    loadingMore: query.isFetchingNextPage,
+    loadMore: () => void query.fetchNextPage(),
+    /** Asks again for a history that never came. */
+    retry: () => void query.refetch(),
+  };
 }

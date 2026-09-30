@@ -81,4 +81,11 @@ const inlined = process.env.NEXT_PUBLIC_FARMENTA_MANIFEST;
  */
 export const deployment: Deployment | null = inlined ? parseDeployment(JSON.parse(inlined)) : null;
 
+/** The tier whose market is at `address`, or `null` when the deployment has no market there. */
+export function tierOfMarket(deployed: Deployment | null, address: string): MarketTier | null {
+  if (!deployed) return null;
+  const tiers = Object.keys(deployed.markets) as MarketTier[];
+  return tiers.find((tier) => deployed.markets[tier].market.toLowerCase() === address.toLowerCase()) ?? null;
+}
+
 export const NOT_DEPLOYED = "The Farmenta contracts are not deployed yet.";
