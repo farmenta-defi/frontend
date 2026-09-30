@@ -27,8 +27,10 @@ import type { MarketRefs, ReadClient } from "./reads";
  * listed whatever it holds, because its loan and its way out are still there.
  *
  * A user never types a token id (decided by the product owner, review of
- * PR #1). When the backend's list is there (FAR-71) it comes first, and this is
- * what is left when the backend is down.
+ * PR #1). The backend's list (`GET /portfolio/:address`) does not replace this
+ * search: the indexer knows a position in a wallet only when it was created
+ * after the indexer's first block, and the logs know them all (measured on
+ * 30 Sep 2026, see the README).
  */
 
 /** The block PositionManager was deployed in on Robinhood Chain (spec §13): where its logs start. */

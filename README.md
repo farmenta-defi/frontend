@@ -128,8 +128,11 @@ borrow, repay, and withdraw collateral. They live in `src/lib/onchain/`.
   has no `ERC721Enumerable`, but its `Transfer` event indexes `to` and the market's
   `CollateralDeposited` indexes `owner`. The app reads both, then `ownerOf` and `loanOf` for each
   id, so a position the wallet passed on drops out. A position is shown by its pair, fee and
-  price range; the token id is a detail. The backend's list comes first when the data layer
-  lands, and this is what is left when the backend is down.
+  price range; the token id is a detail. The backend's list (`GET /portfolio/:address`) is not
+  used: the indexer knows a position in a wallet only when it was created after the indexer's
+  first block, so the list leaves older positions out. Measured on 30 Sep 2026: of nine
+  positions in listed pools, the three created before that block (74,901,824) were missing,
+  each of them holding liquidity, and the six created after it were listed.
 - **The logs are read through the chain's public RPC**, whatever `NEXT_PUBLIC_RPC_URL` is: a
   free-tier provider key refuses a log range of more than 10 blocks. A request is tried four
   times; after that the list says it could not be loaded and offers a retry.
@@ -195,7 +198,9 @@ pure black.
 - **One colour rule for the health factor.** `hfTone()` in `src/components/ui/health-bar.tsx` decides the colour everywhere, so the same number is never cyan on one page and orange on another.
 
 ## Notes
-- The Portfolio page shows the connected wallet, its deposit in each market, and the loans on the positions this browser knows for it, all read from the chain and pinned to `chainId: 4663`. The Activity tab is read from the backend's activity route. Net APY is still empty; it comes from the backend's portfolio route (FAR-71).
+- The Portfolio page shows the connected wallet, its deposit in each market, and the loans on the positions this browser knows for it, all read from the chain and pinned to `chainId: 4663`: the same reads the Repay and Withdraw buttons are decided on, so a figure and the action under it never disagree. Two things on it are the backend's: the Activity tab, from the activity route, and Net APY, which is the supply APY of the market for a wallet with a deposit there and zero for a wallet without.
+- A position shows its uncollected fees in full, beside its value. On collateral the two differ: the market lends against fees only up to a tenth of the principal (spec §6.2).
+- The balance over time beside a deposit is a level line: the backend has no route for a wallet's balance history.
 - The Market and Rates charts on a pool's page are the history of the pool's market: lenders supply to the market, and every pool in it borrows from the same USDG at the same rate.
 - Some ISPs DNS-hijack `rpc.mainnet.chain.robinhood.com`; set `NEXT_PUBLIC_RPC_URL` to a provider endpoint (Alchemy free tier) if reads fail.
 - `src/app/icon.png` and `apple-icon.png` are generated from the logo; regenerate them if the logo changes.

@@ -19,6 +19,13 @@ export type PositionDescription = {
   /** USD. Absent when the position could not be valued. */
   valueUsd: number | null;
   /**
+   * USD the position has earned and not collected, in full. The market lends
+   * against these fees only up to a tenth of the principal (spec §6.2), so on
+   * collateral this is a figure of its own and not a part of `valueUsd`.
+   * Absent when the position could not be valued.
+   */
+  feesUsd: number | null;
+  /**
    * What the position holds, in whole tokens: of USDG, and of the token
    * paired with it. Told apart by address, because USDG is currency0 in some
    * pools and currency1 in others. Absent when the position could not be
@@ -66,6 +73,7 @@ export function describePosition(position: PositionState): PositionDescription {
     range: range === null ? null : range === "Full range" ? range : `${range} USDG`,
     inRange,
     valueUsd,
+    feesUsd: position.holdings ? wadToNumber(position.holdings.feesUsd) : null,
     amounts: amountsOf(position),
   };
 }
