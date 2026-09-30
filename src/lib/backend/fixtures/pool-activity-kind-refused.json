@@ -1,0 +1,5 @@
+{
+  "message": "kind must be deposit, withdraw, borrow, repay, or liquidation",
+  "error": "Bad Request",
+  "statusCode": 400
+}

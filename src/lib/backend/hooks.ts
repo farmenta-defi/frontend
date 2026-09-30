@@ -6,8 +6,8 @@ import type { Address, Hex } from "viem";
 import { backendKeys } from "@/lib/query-keys";
 import type { MarketTier } from "@/lib/risk-params";
 
-import { historyRows, type ActivityPage, type ActivityRow } from "./activity";
-import { BackendError, fetchActivity, fetchListedPools, fetchMarkets, fetchPool } from "./client";
+import { historyRows, type ActivityRow, type PoolActivityFilter, type PoolActivityRow } from "./activity";
+import { BackendError, fetchActivity, fetchListedPools, fetchMarkets, fetchPool, fetchPoolActivity } from "./client";
 import type { HistoryRange, ListedPool, MarketFigures, PoolFigures } from "./figures";
 
 /**
@@ -99,23 +99,25 @@ export function usePoolsFigures(poolIds: readonly Hex[], range: HistoryRange = "
 }
 
 /**
- * A wallet's history, as far as it has been read.
+ * A list of transactions, as far as it has been read: a wallet's, or a pool's.
  *
- * `failed` is for a history that never came. Once rows are on screen they
+ * `failed` is for a list that never came. Once rows are on screen they
  * stay: `error` then says that the last read failed, whether it was the
  * refresh or the next page, and the rows may be behind or stop short.
  */
-export type WalletHistory =
+export type History<Row> =
   | { status: "loading"; rows: []; error: null; hasMore: false }
   | { status: "failed"; rows: []; error: unknown; hasMore: false }
-  | { status: "ready"; rows: ActivityRow[]; error: unknown | null; hasMore: boolean };
+  | { status: "ready"; rows: Row[]; error: unknown | null; hasMore: boolean };
 
-export function historyOf(query: {
-  data: { pages: readonly ActivityPage[] } | undefined;
+export type WalletHistory = History<ActivityRow>;
+
+export function historyOf<Row extends { id: string }>(query: {
+  data: { pages: readonly { rows: Row[]; next?: string | null }[] } | undefined;
   error: unknown;
   isError: boolean;
   hasNextPage: boolean;
-}): WalletHistory {
+}): History<Row> {
   if (query.data !== undefined) {
     return {
       status: "ready",
@@ -149,6 +151,30 @@ export function useWalletActivity(account: Address) {
     loadingMore: query.isFetchingNextPage,
     loadMore: () => void query.fetchNextPage(),
     /** Asks again for a history that never came. */
+    retry: () => void query.refetch(),
+  };
+}
+
+/**
+ * The transactions on a pool's positions, from every wallet, newest first, a
+ * page at a time. `kind` is the backend's filter: another kind is another
+ * list, asked for from its first page.
+ */
+export function usePoolActivity(poolId: Hex, kind: PoolActivityFilter = "all") {
+  const query = useInfiniteQuery({
+    queryKey: backendKeys.poolActivity(poolId, kind),
+    queryFn: ({ pageParam, signal }) => fetchPoolActivity(poolId, kind, pageParam, { signal }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next ?? undefined,
+    ...shared,
+  });
+
+  return {
+    ...historyOf<PoolActivityRow>(query),
+    /** The next page is on its way. */
+    loadingMore: query.isFetchingNextPage,
+    loadMore: () => void query.fetchNextPage(),
+    /** Asks again for a list that never came. */
     retry: () => void query.refetch(),
   };
 }

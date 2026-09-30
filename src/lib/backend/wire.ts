@@ -97,6 +97,41 @@ export type WireActivity = {
   hasMore: boolean;
 };
 
+/**
+ * One row of a pool's history, as `GET /pools/:poolId/activity` sends it: one
+ * log of the pool's market about a position in that pool, from any wallet.
+ * The route sends collateral in and out, loans, repayments and liquidations,
+ * and nothing else (decided by the product owner, 29 Sep 2026): the lenders'
+ * supplies and withdrawals belong to the market, not to a pool.
+ *
+ * Every row has every field. The ones that do not apply to its kind are
+ * `null`: `amountUsdg` is for "borrow" and "repay" only, and `liquidator`,
+ * `repaidUsdg`, `badDebtUsdg` and `full` for "liquidation" only.
+ */
+export type WirePoolActivityRow = {
+  market: string;
+  poolId: string;
+  blockNumber: string;
+  logIndex: number;
+  /** The block's, in seconds since the epoch. */
+  timestamp: string;
+  transactionHash: string;
+  /** "deposit", "withdraw", "borrow", "repay" or "liquidation". */
+  kind: string;
+  /** The position. */
+  tokenId: string;
+  /** The loan's depositor: whose collateral the position is. */
+  owner: string;
+  [field: string]: unknown;
+};
+
+/** One page of a pool's history, newest first. The cursor works as in `WireActivity`. */
+export type WirePoolActivity = {
+  items: WirePoolActivityRow[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
 type Fields = Record<string, unknown>;
 
 const isObject = (value: unknown): value is Fields =>
@@ -197,6 +232,31 @@ function isActivity(value: unknown): value is WireActivity {
   );
 }
 
+function isPoolActivityRow(value: unknown): value is WirePoolActivityRow {
+  if (!isObject(value)) return false;
+  return (
+    isText(value.market) &&
+    isPoolId(value.poolId) &&
+    isText(value.blockNumber) &&
+    isNumber(value.logIndex) &&
+    isText(value.timestamp) &&
+    isText(value.transactionHash) &&
+    isText(value.kind) &&
+    isText(value.tokenId) &&
+    isText(value.owner)
+  );
+}
+
+function isPoolActivity(value: unknown): value is WirePoolActivity {
+  if (!isObject(value)) return false;
+  return (
+    Array.isArray(value.items) &&
+    value.items.every(isPoolActivityRow) &&
+    textOrNull(value.nextCursor) &&
+    typeof value.hasMore === "boolean"
+  );
+}
+
 /** Each returns the answer typed, or `null` when it does not have the shape. */
 export const readMarkets = (body: unknown): WireMarket[] | null =>
   Array.isArray(body) && body.every(isMarket)
@@ -209,3 +269,5 @@ export const readListedPools = (body: unknown): WireListedPool[] | null =>
 export const readPool = (body: unknown): WirePool | null => (isPool(body) ? body : null);
 
 export const readActivity = (body: unknown): WireActivity | null => (isActivity(body) ? body : null);
+
+export const readPoolActivity = (body: unknown): WirePoolActivity | null => (isPoolActivity(body) ? body : null);

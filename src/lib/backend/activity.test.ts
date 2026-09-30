@@ -6,13 +6,23 @@ import {
   activityPageOf,
   historyRows,
   matchesFilter,
+  POOL_ACTIVITY_FILTERS,
+  poolActivityPageOf,
   type ActivityKind,
   type ActivityRow,
 } from "./activity";
 import none from "./fixtures/activity-none.json";
 import pageOne from "./fixtures/activity-page-1.json";
 import pageTwo from "./fixtures/activity-page-2.json";
-import { readActivity, type WireActivity, type WireActivityRow } from "./wire";
+import poolEmpty from "./fixtures/pool-activity-eth-usdg.json";
+import {
+  readActivity,
+  readPoolActivity,
+  type WireActivity,
+  type WireActivityRow,
+  type WirePoolActivity,
+  type WirePoolActivityRow,
+} from "./wire";
 
 const BLUE_CHIP = "0x1f69d27f1ac7415a4252957951900130cb885484";
 
@@ -299,6 +309,194 @@ describe("what a row is called and what a filter keeps", () => {
       expect(activityLabel(row("liquidation", true))).toBe("Full liquidation");
       expect(activityLabel(row("liquidation", false))).toBe("Partial liquidation");
       expect(activityLabel(row("liquidation", null))).toBe("Liquidation");
+    });
+  });
+});
+
+/**
+ * Not recorded: no position has been deposited, borrowed against or liquidated
+ * on the chain, so the live backend answers every pool with an empty list.
+ * The rows are built with the fields and the nulls the backend's service
+ * writes (`backend` `fab3c76`, `src/activity/pool-activity.service.ts`, type
+ * `ActivityRow`).
+ */
+const ETH_USDG = "0xbac3aa3b91584a53a579b3c999a56756e954e59247e497bad1d25a4334bde551";
+const BORROWER = "0x5619cf6fc59ab4f374b7c843ba993e1cbe629fa6";
+const poolRow = (kind: string, fields: Partial<WirePoolActivityRow> = {}, logIndex = 1): WirePoolActivityRow => ({
+  market: BLUE_CHIP,
+  poolId: ETH_USDG,
+  timestamp: "1790750000",
+  blockNumber: "76300000",
+  logIndex,
+  transactionHash: `0x${String(logIndex).padStart(64, "0")}`,
+  tokenId: "3402463",
+  owner: BORROWER,
+  kind,
+  amountUsdg: null,
+  liquidator: null,
+  repaidUsdg: null,
+  badDebtUsdg: null,
+  full: null,
+  ...fields,
+});
+const liquidated = (full: boolean) =>
+  poolRow("liquidation", { liquidator: "0x020eede0121e317e338d24b20754f55cced00cae", repaidUsdg: "12500000", badDebtUsdg: "0", full }, 9);
+const poolPage = (items: WirePoolActivityRow[], more: Partial<WirePoolActivity> = {}): WirePoolActivity => ({
+  items,
+  nextCursor: null,
+  hasMore: false,
+  ...more,
+});
+const poolRowsOf = (items: WirePoolActivityRow[]) => poolActivityPageOf(poolPage(items))!.rows;
+
+describe("poolActivityPageOf", () => {
+  describe("positive", () => {
+    it("names the five kinds a pool's history has, with the position and whose it is", () => {
+      const rows = poolRowsOf([
+        poolRow("deposit", {}, 1),
+        poolRow("withdraw", {}, 2),
+        poolRow("borrow", { amountUsdg: "300000000" }, 3),
+        poolRow("repay", { amountUsdg: "120500000" }, 4),
+        liquidated(false),
+      ]);
+
+      expect(rows.map((row) => row.kind)).toEqual(["collateral-deposit", "collateral-withdraw", "borrow", "repay", "liquidation"]);
+      expect(rows.map((row) => activityLabel(row))).toEqual([
+        "Deposit collateral",
+        "Withdraw collateral",
+        "Borrow",
+        "Repay",
+        "Partial liquidation",
+      ]);
+      expect(rows.every((row) => row.tokenId === "3402463" && row.owner === BORROWER)).toBe(true);
+    });
+
+    it("reads what was borrowed and repaid, and what a liquidator repaid", () => {
+      const [borrow, repay, liquidation] = poolRowsOf([
+        poolRow("borrow", { amountUsdg: "300000000" }, 3),
+        poolRow("repay", { amountUsdg: "120500000" }, 4),
+        liquidated(true),
+      ]);
+
+      expect(borrow.amountUsdg).toBe(300);
+      expect(repay.amountUsdg).toBe(120.5);
+      expect(liquidation).toMatchObject({ amountUsdg: 12.5, fullSeizure: true });
+      expect(activityLabel(liquidation)).toBe("Full liquidation");
+    });
+
+    it("places a row in time and on the chain", () => {
+      const [row] = poolRowsOf([poolRow("borrow", { amountUsdg: "1" }, 7)]);
+
+      expect(row).toMatchObject({ id: "76300000:7", at: 1_790_750_000_000, market: BLUE_CHIP });
+      expect(row.transactionHash).toMatch(/^0x0{63}7$/);
+    });
+  });
+
+  describe("negative", () => {
+    it("refuses a page with a row that cannot be placed, or has no position or no owner", () => {
+      const broken: Partial<WirePoolActivityRow>[] = [
+        { blockNumber: "0x48c4e60" },
+        { logIndex: -1 },
+        { logIndex: 0.5 },
+        { timestamp: "2026-09-30T06:33:20Z" },
+        { transactionHash: "0x1234" },
+        { market: "blueChip" },
+        { tokenId: "#3402463" },
+        { owner: "0x5619" },
+      ];
+
+      for (const fields of broken) {
+        expect(poolActivityPageOf(poolPage([poolRow("borrow", fields)])), JSON.stringify(fields)).toBeNull();
+      }
+    });
+
+    it("does not read a body whose rows lack a field every row has", () => {
+      for (const field of ["poolId", "kind", "tokenId", "owner", "transactionHash", "blockNumber"]) {
+        const row: Record<string, unknown> = { ...poolRow("borrow") };
+        delete row[field];
+
+        expect(readPoolActivity({ items: [row], nextCursor: null, hasMore: false }), field).toBeNull();
+      }
+    });
+
+    it("refuses a page that says there is more and gives nothing to ask for it with", () => {
+      expect(poolActivityPageOf(poolPage([poolRow("borrow")], { hasMore: true, nextCursor: null }))).toBeNull();
+    });
+
+    it("shows a dash, never a zero, for a loan whose amount did not come as one", () => {
+      for (const amountUsdg of [null, undefined, 300, "300.5", ""]) {
+        expect(poolRowsOf([poolRow("borrow", { amountUsdg })])[0].amountUsdg, String(amountUsdg)).toBeNull();
+      }
+    });
+  });
+
+  describe("edge case", () => {
+    it("reads the recorded answer of the live backend, a pool nobody has borrowed against, as an empty last page", () => {
+      const recordedEmpty = readPoolActivity(poolEmpty);
+
+      expect(recordedEmpty).not.toBeNull();
+      expect(poolActivityPageOf(recordedEmpty!)).toEqual({ rows: [], next: null });
+    });
+
+    it("has no amount for collateral going in or out, which moves no USDG, whatever the row carries", () => {
+      const [deposit, withdraw] = poolRowsOf([poolRow("deposit", { amountUsdg: "999" }, 1), poolRow("withdraw", { repaidUsdg: "999" }, 2)]);
+
+      expect(deposit.amountUsdg).toBeNull();
+      expect(withdraw.amountUsdg).toBeNull();
+    });
+
+    it("does not take a liquidation's repayment from the field of a loan, or a loan's from a liquidation's", () => {
+      const [liquidation] = poolRowsOf([poolRow("liquidation", { amountUsdg: "999", repaidUsdg: "12500000", full: false }, 9)]);
+      const [borrow] = poolRowsOf([poolRow("borrow", { amountUsdg: "300000000", repaidUsdg: "999" }, 3)]);
+
+      expect(liquidation.amountUsdg).toBe(12.5);
+      expect(borrow.amountUsdg).toBe(300);
+    });
+
+    it("keeps a row of a kind it has no name for, with its date, its owner and its transaction", () => {
+      const rows = poolRowsOf([poolRow("flash_loan", {}, 1), poolRow("toString", {}, 2)]);
+
+      expect(rows.map((row) => row.kind)).toEqual(["other", "other"]);
+      expect(rows[0]).toMatchObject({ owner: BORROWER, at: 1_790_750_000_000, amountUsdg: null });
+    });
+
+    it("sends the cursor of the last page nowhere, as the wallet's list does", () => {
+      const last = poolActivityPageOf(poolPage([poolRow("borrow", { amountUsdg: "1" })], { nextCursor: "76300000:1", hasMore: false }));
+
+      expect(last?.next).toBeNull();
+    });
+
+    it("lists the pages of a pool as one history, a log once", () => {
+      const first = poolActivityPageOf(poolPage([poolRow("repay", { amountUsdg: "1" }, 4), poolRow("borrow", { amountUsdg: "1" }, 3)], { nextCursor: "76300000:3", hasMore: true }))!;
+      const second = poolActivityPageOf(poolPage([poolRow("borrow", { amountUsdg: "1" }, 3), poolRow("deposit", {}, 1)]))!;
+
+      expect(historyRows([first, second]).map((row) => row.id)).toEqual(["76300000:4", "76300000:3", "76300000:1"]);
+    });
+  });
+});
+
+describe("what a pool's list can be narrowed to", () => {
+  describe("positive", () => {
+    it("offers every kind the route sends, under the name the route takes", () => {
+      expect(POOL_ACTIVITY_FILTERS.map((filter) => filter.id)).toEqual(["all", "deposit", "withdraw", "borrow", "repay", "liquidation"]);
+    });
+  });
+
+  describe("negative", () => {
+    it("offers no supply and no withdrawal of USDG: those are the market's, not a pool's", () => {
+      const labels = POOL_ACTIVITY_FILTERS.map((filter) => filter.label);
+
+      expect(labels).not.toContain("Supply");
+      expect(labels).not.toContain("Withdraw");
+    });
+  });
+
+  describe("edge case", () => {
+    it("calls each kind what the row of that kind is called", () => {
+      for (const filter of POOL_ACTIVITY_FILTERS) {
+        if (filter.id === "all" || filter.id === "liquidation") continue;
+        expect(activityLabel(poolRowsOf([poolRow(filter.id)])[0]), filter.id).toBe(filter.label);
+      }
     });
   });
 });

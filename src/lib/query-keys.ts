@@ -27,6 +27,8 @@ export const backendKeys = {
   pools: (tier: MarketTier) => ["backend", "pools", tier] as const,
   pool: (poolId: Hex, range?: string) =>
     range ? (["backend", "pool", lower(poolId), range] as const) : (["backend", "pool", lower(poolId)] as const),
+  /** Under the pool's own prefix, so a transaction in the pool reads its list again. */
+  poolActivity: (poolId: Hex, kind: string) => ["backend", "pool", lower(poolId), "activity", kind] as const,
   portfolio: (account: Address) => ["backend", "portfolio", lower(account)] as const,
   activity: (account: Address) => ["backend", "activity", lower(account)] as const,
 };

@@ -2,7 +2,7 @@ import { isAddress, type Address, type Hex } from "viem";
 
 import { usdgFieldToNumber } from "@/lib/units";
 
-import type { WireActivity, WireActivityRow } from "./wire";
+import type { WireActivity, WireActivityRow, WirePoolActivity, WirePoolActivityRow } from "./wire";
 
 /**
  * A wallet's history, as rows to show (FAR-71). The backend sends every log
@@ -129,7 +129,7 @@ export function activityPageOf(activity: WireActivity): ActivityPage | null {
  * moves between two requests the backend's pages stay in step through the
  * cursor, and a log that came twice all the same is shown where it came first.
  */
-export function historyRows(pages: readonly ActivityPage[]): ActivityRow[] {
+export function historyRows<Row extends { id: string }>(pages: readonly { rows: Row[]; next?: string | null }[]): Row[] {
   const seen = new Set<string>();
   return pages
     .flatMap((page) => page.rows)
@@ -181,3 +181,68 @@ const FILTER_KINDS: Record<Exclude<ActivityFilter, "all">, readonly ActivityKind
 
 export const matchesFilter = (row: Pick<ActivityRow, "kind">, filter: ActivityFilter) =>
   filter === "all" || FILTER_KINDS[filter].includes(row.kind);
+
+/* ------------------------------------------------------------------ */
+/* A pool's history                                                     */
+/* ------------------------------------------------------------------ */
+
+/** A row of a pool's history: what happened to a position in the pool, and whose it is. */
+export type PoolActivityRow = ActivityRow & {
+  /** The loan's depositor: whose collateral the position is. For a liquidation, who was liquidated. */
+  owner: Address;
+};
+
+export type PoolActivityPage = {
+  /** Newest first. */
+  rows: PoolActivityRow[];
+  /** What to ask the page after this one with, or `null` when this is the last. */
+  next: string | null;
+};
+
+/** The route names a liquidation in `kind`, where the wallet's route has a category for it. */
+const POOL_KINDS: Record<string, ActivityKind> = { ...LOAN_KINDS, liquidation: "liquidation" };
+
+function poolRowOf(row: WirePoolActivityRow): PoolActivityRow | null {
+  if (!isDigits(row.blockNumber) || !isDigits(row.timestamp) || !isDigits(row.tokenId)) return null;
+  if (!Number.isInteger(row.logIndex) || row.logIndex < 0) return null;
+  if (!isAddress(row.market, { strict: false }) || !isAddress(row.owner, { strict: false })) return null;
+  if (!isHash(row.transactionHash)) return null;
+
+  const kind = (Object.hasOwn(POOL_KINDS, row.kind) && POOL_KINDS[row.kind]) || "other";
+  const amountField = AMOUNT_FIELD[kind];
+  return {
+    id: `${row.blockNumber}:${row.logIndex}`,
+    at: Number(row.timestamp) * 1_000,
+    kind,
+    market: row.market,
+    amountUsdg: amountField ? usdgFieldToNumber(row[amountField]) : null,
+    tokenId: row.tokenId,
+    fullSeizure: kind === "liquidation" && typeof row.full === "boolean" ? row.full : null,
+    transactionHash: row.transactionHash,
+    owner: row.owner,
+  };
+}
+
+/** One page of the backend's answer as rows, or `null` when a row is not one. */
+export function poolActivityPageOf(activity: WirePoolActivity): PoolActivityPage | null {
+  const rows = activity.items.map(poolRowOf);
+  if (!rows.every((row) => row !== null)) return null;
+  if (activity.hasMore && !activity.nextCursor) return null;
+  return { rows: rows as PoolActivityRow[], next: activity.hasMore ? activity.nextCursor : null };
+}
+
+/**
+ * What a pool's list can be narrowed to. Unlike the wallet's, this filter is
+ * the backend's: the route takes one kind, under the name the chain's event
+ * has, and the list is asked for again.
+ */
+export const POOL_ACTIVITY_FILTERS = [
+  { id: "all", label: "All types" },
+  { id: "deposit", label: "Deposit collateral" },
+  { id: "withdraw", label: "Withdraw collateral" },
+  { id: "borrow", label: "Borrow" },
+  { id: "repay", label: "Repay" },
+  { id: "liquidation", label: "Liquidation" },
+] as const;
+
+export type PoolActivityFilter = (typeof POOL_ACTIVITY_FILTERS)[number]["id"];
