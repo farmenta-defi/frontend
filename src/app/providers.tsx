@@ -23,8 +23,8 @@ export function Providers({ children }: { children: ReactNode }) {
             logo's cold blue on the same navy ground, medium radii. */}
         <RainbowKitProvider
           theme={darkTheme({
-            accentColor: "#0b63e5",
-            accentColorForeground: "#ffffff",
+            accentColor: "var(--primary)",
+            accentColorForeground: "var(--primary-foreground)",
             borderRadius: "medium",
             overlayBlur: "small",
           })}

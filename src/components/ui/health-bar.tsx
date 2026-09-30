@@ -39,13 +39,13 @@ export function HealthBar({ hf, className }: { hf: number; className?: string })
           {/* everything to the right of the marker is dimmed, so the lit
               part of the bar is the part the loan has actually earned */}
           <div
-            className="absolute inset-y-0 right-0 transition-[left] duration-300"
-            style={{ left: `${pct}%`, background: "rgba(5,8,15,0.62)" }}
+            className="absolute inset-y-0 right-0 bg-background/62 transition-[left] duration-300"
+            style={{ left: `${pct}%` }}
           />
         </div>
         <span
           aria-hidden
-          className="absolute top-0 block h-[15px] w-[2px] rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)] transition-[left] duration-300"
+          className="absolute top-0 block h-[15px] w-[2px] rounded-full bg-foreground transition-[left] duration-300"
           style={{ left: `calc(${pct}% - 1px)` }}
         />
       </div>

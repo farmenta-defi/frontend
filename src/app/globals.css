@@ -110,6 +110,9 @@
   --warn: #fd8501; /* logo orange */
   --danger: #fc082a; /* logo red */
 
+  /* a light disc under a token mark that ships as dark art on nothing */
+  --mark-disc: #eef1f6;
+
   /* --- ground & surfaces ------------------------------------------ */
   --ink-950: #05080f;
   --ink-900: #080d18;
@@ -147,6 +150,11 @@
   --chart-4: var(--warn);
   --chart-5: var(--danger);
 
+  /* a plot's own furniture: the structural steel at three strengths */
+  --chart-grid: rgba(148, 178, 214, 0.1);
+  --chart-axis: rgba(148, 178, 214, 0.28);
+  --chart-cursor: rgba(233, 239, 248, 0.32);
+
   --sidebar: var(--ink-900);
   --sidebar-foreground: #e9eff8;
   --sidebar-primary: var(--brand-500);
@@ -163,7 +171,6 @@
     rgba(148, 178, 214, 0.018) 46%,
     rgba(148, 178, 214, 0.005) 100%
   );
-  --brand-gradient: linear-gradient(135deg, var(--brand-600) 0%, #0a9bf5 55%, var(--brand-400) 100%);
   --edge-highlight: inset 0 1px 0 rgba(190, 218, 250, 0.09);
 }
 
@@ -180,12 +187,13 @@
   body {
     background-color: var(--background);
     color: var(--foreground);
-    /* Ambient vortex: one cold pole, one warm pole, the logo's own
-       tension, spread across the page and kept nearly invisible. */
-    background-image:
-      radial-gradient(58rem 42rem at 78% -8%, rgba(0, 127, 253, 0.16), transparent 62%),
-      radial-gradient(46rem 34rem at 6% 4%, rgba(253, 133, 1, 0.055), transparent 60%),
-      radial-gradient(70rem 50rem at 50% 108%, rgba(1, 28, 70, 0.65), transparent 70%);
+    /* One cold light, top right, and it does not move. Warm is kept for
+       risk, so nothing warm is spent on the page's own ground. */
+    background-image: radial-gradient(
+      58rem 42rem at 78% -8%,
+      color-mix(in srgb, var(--brand-500) 16%, transparent),
+      transparent 62%
+    );
     background-attachment: fixed;
     text-rendering: optimizeLegibility;
   }
@@ -210,8 +218,8 @@
   }
 
   ::selection {
-    background: rgba(0, 185, 253, 0.28);
-    color: #ffffff;
+    background: color-mix(in srgb, var(--brand-400) 28%, transparent);
+    color: var(--primary-foreground);
   }
 
   ::-webkit-scrollbar {
@@ -241,18 +249,6 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--edge-highlight);
-}
-
-@utility brand-fill {
-  background-image: var(--brand-gradient);
-  color: #ffffff;
-}
-
-@utility text-brand-gradient {
-  background-image: linear-gradient(100deg, #ffffff 0%, var(--brand-200) 48%, var(--brand-400) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
 }
 
 @utility label-xs {
@@ -297,17 +293,6 @@
   }
 }
 
-/* The logo turns; so does its echo behind the hero. One rotation per
-   minute, felt rather than watched. */
-@keyframes fmt-spin-slow {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @keyframes fmt-pulse-soft {
   0%,
   100% {
@@ -326,9 +311,6 @@
   opacity: 0;
   animation: fmt-scale 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-.spin-slow {
-  animation: fmt-spin-slow 60s linear infinite;
-}
 .pulse-soft {
   animation: fmt-pulse-soft 2.4s ease-in-out infinite;
 }
@@ -340,7 +322,6 @@
     animation: none;
     transform: none;
   }
-  .spin-slow,
   .pulse-soft {
     animation: none;
   }
@@ -355,7 +336,8 @@
    Range slider
    A native <input type="range"> so keyboard and screen-reader support
    come for free; only the paint is ours. The filled part of the track
-   is driven by an inline `--fill` percentage.
+   is driven by an inline `--fill` percentage: one flat blue up to the
+   thumb, the input grey after it.
    ================================================================== */
 
 .range-brand {
@@ -375,9 +357,8 @@
   border-radius: 999px;
   background: linear-gradient(
     90deg,
-    var(--brand-600) 0%,
-    var(--brand-400) var(--fill, 50%),
-    rgba(148, 178, 214, 0.16) var(--fill, 50%)
+    var(--brand-500) var(--fill, 50%),
+    var(--input) var(--fill, 50%)
   );
 }
 .range-brand::-moz-range-track {
@@ -385,9 +366,8 @@
   border-radius: 999px;
   background: linear-gradient(
     90deg,
-    var(--brand-600) 0%,
-    var(--brand-400) var(--fill, 50%),
-    rgba(148, 178, 214, 0.16) var(--fill, 50%)
+    var(--brand-500) var(--fill, 50%),
+    var(--input) var(--fill, 50%)
   );
 }
 
@@ -398,29 +378,26 @@
   height: 15px;
   margin-top: -5.5px;
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--primary-foreground);
   border: 2px solid var(--brand-500);
-  box-shadow:
-    0 0 0 4px rgba(0, 185, 253, 0.14),
-    0 2px 6px rgba(0, 0, 0, 0.55);
   transition: box-shadow 0.15s ease;
 }
 .range-brand::-moz-range-thumb {
   width: 15px;
   height: 15px;
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--primary-foreground);
   border: 2px solid var(--brand-500);
-  box-shadow:
-    0 0 0 4px rgba(0, 185, 253, 0.14),
-    0 2px 6px rgba(0, 0, 0, 0.55);
 }
 
+/* The ring is the thumb's hover and focus state, so it is not worn at rest. */
 .range-brand:hover::-webkit-slider-thumb,
 .range-brand:focus-visible::-webkit-slider-thumb {
-  box-shadow:
-    0 0 0 6px rgba(0, 185, 253, 0.26),
-    0 2px 8px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--brand-400) 26%, transparent);
+}
+.range-brand:hover::-moz-range-thumb,
+.range-brand:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--brand-400) 26%, transparent);
 }
 .range-brand:focus-visible {
   outline: none;

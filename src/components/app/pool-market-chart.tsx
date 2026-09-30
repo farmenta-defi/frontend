@@ -84,7 +84,7 @@ export function PoolMarketChart({ pool }: { pool: CollateralPool }) {
 /** Where a chart would be, when its history could not be read. The reason is given once, at the top of the page. */
 export function Unavailable() {
   return (
-    <div className="flex h-[218px] items-center justify-center rounded-xl bg-[rgba(148,178,214,0.045)] text-[13px] text-steel-500">
+    <div className="flex h-[218px] items-center justify-center text-[13px] text-steel-500">
       History unavailable
     </div>
   );

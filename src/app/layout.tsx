@@ -48,6 +48,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  // `--ink-950` from globals.css, written out: a meta tag cannot read a CSS variable.
   themeColor: "#05080f",
   colorScheme: "dark",
 };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useChainModal, useConnectModal } from "@rainbow-me/rainbowkit";
-import { ArrowRight, Check, Copy, ListFilter, TriangleAlert, Wallet } from "lucide-react";
+import { ArrowRight, Check, Copy, TriangleAlert, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useAccount } from "wagmi";
@@ -10,17 +10,15 @@ import { FiguresNotice } from "@/components/app/pool-figures";
 import { WalletActivity } from "@/components/app/portfolio-activity";
 import { BorrowPositions, SupplyPosition, useDeposit } from "@/components/app/portfolio-positions";
 import { AddressMark } from "@/components/ui/address-mark";
-import { AssetMark, type AssetId } from "@/components/ui/asset-mark";
 import { Badge, Dot } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
-import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import { Tabs } from "@/components/ui/tabs";
 import { depositApyPct } from "@/lib/backend/figures";
 import { useMarket } from "@/lib/backend/hooks";
 import { chain as farmentaChain } from "@/lib/chain";
 import { deployment, NOT_DEPLOYED } from "@/lib/deployment";
 import { NO_FIGURE, shortAddress } from "@/lib/format";
-import { MARKETS, NETWORKS } from "@/lib/markets";
+import { MARKETS } from "@/lib/markets";
 import type { MarketTier } from "@/lib/risk-params";
 import { usdgToNumber } from "@/lib/units";
 
@@ -50,64 +48,26 @@ const useMounted = () =>
   );
 
 /**
- * Arbitrum, USDC and USDT are listed but cannot be picked, the same way the
- * market table lists them: Farmenta runs on Robinhood Chain and lends USDG,
- * and the greyed rows say what is planned without pretending it is live.
+ * Where a list would be, when there is nothing in it. The way to the markets
+ * is offered once a tab, by the panel that has nothing else to show: a section
+ * that is empty beside others says so and leaves it there.
  */
-const CHAINS: SelectOption[] = [
-  ...Object.entries(NETWORKS).map(([id, network]) => ({
-    id,
-    label: network.name,
-    mark: <AssetMark asset={id as AssetId} size={18} />,
-  })),
-  { id: "arbitrum", label: "Arbitrum", mark: <AssetMark asset="arbitrum" size={18} />, disabled: true },
-];
-const STABLECOINS: SelectOption[] = [
-  { id: "USDG", label: "USDG", mark: <AssetMark asset="USDG" size={18} /> },
-  { id: "USDC", label: "USDC", mark: <AssetMark asset="USDC" size={18} />, disabled: true },
-  { id: "USDT", label: "USDT", mark: <AssetMark asset="USDT" size={18} />, disabled: true },
-];
-
-const ALL_NETWORKS: SelectOption[] = [{ id: "all", label: "All networks" }, ...CHAINS];
-const ALL_CHAINS: SelectOption[] = [{ id: "all", label: "All chains" }, ...CHAINS];
-const ASSETS: SelectOption[] = [{ id: "all", label: "All assets" }, ...STABLECOINS];
-const LOANS: SelectOption[] = [{ id: "all", label: "All loans" }, ...STABLECOINS];
-const COLLATERAL: SelectOption[] = [
-  { id: "all", label: "All collateral" },
-  ...MARKETS.map((market) => ({ id: market.id as string, label: market.name })),
-];
-
-function Filter({
-  label,
-  options,
-  align,
-}: {
-  label: string;
-  options: readonly SelectOption[];
-  align: "left" | "right";
-}) {
-  const [value, setValue] = useState(options[0].id);
+function EmptyList({ children, browse = false }: { children: ReactNode; browse?: boolean }) {
   return (
-    <SelectMenu
-      label={label}
-      variant="ghost"
-      align={align}
-      value={value}
-      options={options}
-      onChange={setValue}
-      icon={<ListFilter className="size-4" aria-hidden />}
-    />
-  );
-}
-
-function EmptyList({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex flex-col items-center gap-4 rounded-[var(--radius-xl)] border border-border/70 px-5 py-9 text-center">
+    <div
+      className={
+        browse
+          ? "flex flex-col items-center gap-4 rounded-[var(--radius-xl)] border border-border/70 px-5 py-9 text-center"
+          : "rounded-[var(--radius-xl)] border border-border/70 px-5 py-6 text-center"
+      }
+    >
       <p className="text-[13px] text-steel-400">{children}</p>
-      <Link href="/market" className={buttonClasses({ variant: "primary", size: "sm" })}>
-        Browse markets
-        <ArrowRight className="size-4" strokeWidth={2} aria-hidden />
-      </Link>
+      {browse && (
+        <Link href="/market" className={buttonClasses({ variant: "secondary", size: "sm" })}>
+          Browse markets
+          <ArrowRight className="size-4" strokeWidth={2} aria-hidden />
+        </Link>
+      )}
     </div>
   );
 }
@@ -115,10 +75,7 @@ function EmptyList({ children }: { children: ReactNode }) {
 /** A balance over time with nothing in it yet: a level line at zero. */
 function FlatSparkline() {
   return (
-    <div
-      aria-hidden
-      className="relative h-[92px] overflow-hidden rounded-xl border border-border/70 bg-black/20"
-    >
+    <div aria-hidden className="relative h-[92px] overflow-hidden">
       <div className="absolute inset-x-0 top-[34%] h-10 bg-gradient-to-b from-brand-500/20 to-transparent" />
       <div className="absolute inset-x-0 top-[34%] h-px bg-brand-500" />
     </div>
@@ -161,7 +118,6 @@ function AccountHeader() {
           <Wallet className="size-[18px]" strokeWidth={1.75} aria-hidden />
           Connect wallet
         </button>
-        <p className="text-[13px] text-steel-400">Connect a wallet to see its positions.</p>
       </div>
     );
   }
@@ -211,16 +167,15 @@ function AccountHeader() {
   );
 }
 
-function SupplySection({ tier, name, connected }: { tier: MarketTier; name: string; connected: boolean }) {
-  const [chain, setChain] = useState("all");
+function SupplySection({ tier, name }: { tier: MarketTier; name: string }) {
   const id = `supply-${name.toLowerCase().replace(/\s+/g, "-")}`;
   const deposit = useDeposit(tier);
   // USDG is read as dollars across the app; the figure is the deposit in USDG.
-  const deposited = (connected && deposit ? usdgToNumber(deposit.deposited) : 0).toLocaleString("en-US", {
+  const deposited = (deposit ? usdgToNumber(deposit.deposited) : 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  const holding = connected && deposit !== null && deposit.deposited > 0n;
+  const holding = deposit !== null && deposit.deposited > 0n;
   // What the deposit earns: the market's supply APY, which is the backend's figure.
   const market = useMarket(tier);
   const apy = depositApyPct(holding, market.data);
@@ -233,16 +188,7 @@ function SupplySection({ tier, name, connected }: { tier: MarketTier; name: stri
 
       <div className="surface mt-5 grid items-center gap-5 p-5 sm:p-6 md:grid-cols-[minmax(0,1fr)_minmax(0,220px)_minmax(0,200px)]">
         <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-[13px] text-steel-400">Your deposits</span>
-            <SelectMenu
-              label="Chain"
-              align="left"
-              value={chain}
-              options={ALL_CHAINS}
-              onChange={setChain}
-            />
-          </div>
+          <p className="text-[13px] text-steel-400">Your deposits</p>
           <p className="font-display tnum mt-3 text-[34px] font-semibold leading-none text-foreground sm:text-[40px]">
             <span className="text-steel-500">$</span>
             {deposited}
@@ -251,7 +197,8 @@ function SupplySection({ tier, name, connected }: { tier: MarketTier; name: stri
 
         <FlatSparkline />
 
-        <div className="rounded-xl border border-border/70 bg-white/[0.03] px-5 py-4">
+        {/* A column of the same card, parted by a rule: not a card of its own. */}
+        <div className="border-t border-border/70 pt-4 md:border-l md:border-t-0 md:pl-6 md:pt-0">
           <p className="text-[13px] text-steel-400">Net APY</p>
           <p className="font-display tnum mt-2 text-[22px] font-semibold leading-none text-foreground">
             {apy === null ? (
@@ -270,49 +217,43 @@ function SupplySection({ tier, name, connected }: { tier: MarketTier; name: stri
       {/* Said only to a wallet that has a deposit here: nobody else is shown a figure of the backend's. */}
       {holding && <FiguresNotice figures={[market]} className="mt-3" />}
 
-      <div className="mt-4 flex flex-wrap items-center justify-end gap-1">
-        <Filter label="Network" options={ALL_NETWORKS} align="right" />
-        <Filter label="Asset" options={ASSETS} align="right" />
-      </div>
-
-      <div className="mt-2">
-        {holding ? (
+      {/* No deposit is already said by the figure above, so nothing is added under it. */}
+      {holding && (
+        <div className="mt-4">
           <SupplyPosition tier={tier} />
-        ) : (
-          <EmptyList>
-            {connected
-              ? `No active supply positions in the ${name} market.`
-              : "Connect a wallet to see its supply positions."}
-          </EmptyList>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
 
 function Positions({ connected }: { connected: boolean }) {
+  // Nothing on this tab is about anyone until a wallet is connected, so it is
+  // said once, not once a section under three figures of zero.
+  if (!connected) {
+    return (
+      <div className="space-y-4 pt-5">
+        <EmptyList browse>Deposits and loans are listed here once a wallet is connected.</EmptyList>
+        {!deployment && <p className="text-[12px] leading-[18px] text-steel-500">{NOT_DEPLOYED}</p>}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-12 pt-5">
       {MARKETS.map((market) => (
-        <SupplySection key={market.id} tier={market.id} name={market.name} connected={connected} />
+        <SupplySection key={market.id} tier={market.id} name={market.name} />
       ))}
 
       <section aria-labelledby="borrow-positions">
         <h2 id="borrow-positions" className="text-[19px] font-semibold text-foreground">
           Borrow positions
         </h2>
-        <div className="mt-4 flex flex-wrap items-center gap-1">
-          <Filter label="Network" options={ALL_NETWORKS} align="left" />
-          <Filter label="Loan" options={LOANS} align="left" />
-          <Filter label="Collateral" options={COLLATERAL} align="left" />
-        </div>
-        <div className="mt-2">
-          {connected && deployment ? (
+        <div className="mt-4">
+          {deployment ? (
             <BorrowPositions empty={<EmptyList>No active borrow positions.</EmptyList>} />
           ) : (
-            <EmptyList>
-              {connected ? "No active borrow positions." : "Connect a wallet to see its borrow positions."}
-            </EmptyList>
+            <EmptyList>No active borrow positions.</EmptyList>
           )}
         </div>
       </section>
@@ -327,9 +268,9 @@ function Activity({ connected }: { connected: boolean }) {
   return (
     <div className="pt-5">
       {connected && address ? (
-        <WalletActivity account={address} empty={<EmptyList>No transactions yet.</EmptyList>} />
+        <WalletActivity account={address} empty={<EmptyList browse>No transactions yet.</EmptyList>} />
       ) : (
-        <EmptyList>Connect a wallet to see its activity.</EmptyList>
+        <EmptyList browse>Transactions are listed here once a wallet is connected.</EmptyList>
       )}
     </div>
   );
