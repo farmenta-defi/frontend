@@ -155,6 +155,17 @@ export function poolOf(pool: WirePool): PoolFigures | null {
 }
 
 /**
+ * What a wallet's deposit in a market earns a year, as a percentage: the
+ * market's supply APY at its latest reading. A wallet with no deposit there
+ * earns nothing, which is a zero and needs no reading. `null` when it has a
+ * deposit and the backend has no rate to give.
+ */
+export function depositApyPct(holding: boolean, market: MarketFigures | null): number | null {
+  if (!holding) return 0;
+  return market?.latest?.supplyApyPct ?? null;
+}
+
+/**
  * The pools of `listed` the app has a page for, in the order of `known`.
  *
  * Until the backend can say which tokens a pool pairs (FAR-82), a pool's name

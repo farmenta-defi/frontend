@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { knownPools, listedPoolOf, marketOf, poolOf, readingOf, tierOf } from "./figures";
+import { depositApyPct, knownPools, listedPoolOf, marketOf, poolOf, readingOf, tierOf, type MarketFigures } from "./figures";
 import markets from "./fixtures/markets.json";
 import poolEthUsdg from "./fixtures/pool-eth-usdg.json";
 import poolMetaUsdg from "./fixtures/pool-meta-usdg.json";
@@ -313,6 +313,47 @@ describe("knownPools", () => {
 
       expect(knownPools([], known, report)).toEqual([]);
       expect(report).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("what a deposit earns", () => {
+  /** The recorded blue-chip market, and the same market with lenders earning 4.25%. */
+  const recorded = marketOf(readMarkets(markets)![0])!;
+  const lending: MarketFigures = { ...recorded, latest: readingOf(inUse({ supplyApyBps: 425 })) };
+
+  describe("positive", () => {
+    it("is the market's supply APY for a wallet with a deposit there", () => {
+      expect(depositApyPct(true, lending)).toBe(4.25);
+    });
+
+    it("is the recorded market's rate, which is zero while nobody borrows, and a figure", () => {
+      expect(recorded.latest?.supplyApyPct).toBe(0);
+      expect(depositApyPct(true, recorded)).toBe(0);
+    });
+  });
+
+  describe("negative", () => {
+    it("is absent, not zero, for a deposit whose market the backend did not give", () => {
+      expect(depositApyPct(true, null)).toBeNull();
+    });
+
+    it("is absent for a deposit in a market the backend has not read yet", () => {
+      expect(depositApyPct(true, { ...recorded, latest: null })).toBeNull();
+    });
+
+    it("is absent when the rate did not come as one", () => {
+      const broken = { ...recorded, latest: readingOf(inUse({ supplyApyBps: "4.25" as unknown as number })) };
+
+      expect(depositApyPct(true, broken)).toBeNull();
+    });
+  });
+
+  describe("edge case", () => {
+    it("is zero for a wallet with no deposit, whatever the market pays and whether or not the backend answered", () => {
+      expect(depositApyPct(false, lending)).toBe(0);
+      expect(depositApyPct(false, null)).toBe(0);
+      expect(depositApyPct(false, { ...recorded, latest: null })).toBe(0);
     });
   });
 });

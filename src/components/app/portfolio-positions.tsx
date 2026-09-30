@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { sanitizeAmount } from "@/components/ui/field";
 import { hfLabel, hfTone } from "@/components/ui/health-bar";
-import { fmtUsd, fmtUsdg } from "@/lib/format";
+import { fmtUsd, fmtUsdExact, fmtUsdg, orDash } from "@/lib/format";
 import { COLLATERAL_POOLS, MARKETS, poolById, poolHref } from "@/lib/markets";
 import { repay, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
 import { samePool } from "@/lib/onchain/contracts";
@@ -187,7 +187,7 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
   const [open, setOpen] = useState(false);
 
   const pool = poolOf(position);
-  const { fee } = describePosition(position);
+  const { fee, feesUsd } = describePosition(position);
   const exit = withdrawCollateralGate(position);
   const healthFactor = position.risk ? healthFactorToNumber(position.risk.healthFactor) : null;
   const tone = healthFactor === null ? null : hfTone(healthFactor);
@@ -223,6 +223,8 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
         </div>
         <Figure label="Debt">{usdg(position.debt)}</Figure>
         <Figure label="Collateral">{position.risk ? fmtUsd(wadToNumber(position.risk.positionValue)) : "—"}</Figure>
+        {/* In full. "Collateral" counts them up to a tenth of the principal, so the two differ. */}
+        <Figure label="Uncollected fees">{orDash(feesUsd, fmtUsdExact)}</Figure>
         <Figure label="Health factor">
           {healthFactor === null || position.debt === 0n ? (
             "—"
@@ -304,7 +306,7 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
 /** A position that is still in the wallet: nothing to repay, and the pool's page deposits it. */
 function WalletPosition({ position }: { position: PositionState }) {
   const pool = poolOf(position);
-  const { fee, valueUsd } = describePosition(position);
+  const { fee, valueUsd, feesUsd } = describePosition(position);
   return (
     <div className="surface flex flex-wrap items-center justify-between gap-x-8 gap-y-4 p-5 sm:p-6">
       <div className="flex items-center gap-3">
@@ -325,6 +327,7 @@ function WalletPosition({ position }: { position: PositionState }) {
         </div>
       </div>
       <Figure label="Value">{valueUsd === null ? "—" : fmtUsd(valueUsd)}</Figure>
+      <Figure label="Uncollected fees">{orDash(feesUsd, fmtUsdExact)}</Figure>
       {pool ? (
         <Link href={poolHref(pool)} className={buttonClasses({ variant: "secondary", size: "sm" })}>
           Deposit on the {pool.pair} page

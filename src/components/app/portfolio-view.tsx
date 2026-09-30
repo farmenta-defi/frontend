@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useAccount } from "wagmi";
 
+import { FiguresNotice } from "@/components/app/pool-figures";
 import { WalletActivity } from "@/components/app/portfolio-activity";
 import { BorrowPositions, SupplyPosition, useDeposit } from "@/components/app/portfolio-positions";
 import { AddressMark } from "@/components/ui/address-mark";
@@ -14,9 +15,11 @@ import { Badge, Dot } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 import { Tabs } from "@/components/ui/tabs";
+import { depositApyPct } from "@/lib/backend/figures";
+import { useMarket } from "@/lib/backend/hooks";
 import { chain as farmentaChain } from "@/lib/chain";
 import { deployment, NOT_DEPLOYED } from "@/lib/deployment";
-import { shortAddress } from "@/lib/format";
+import { NO_FIGURE, shortAddress } from "@/lib/format";
 import { MARKETS, NETWORKS } from "@/lib/markets";
 import type { MarketTier } from "@/lib/risk-params";
 import { usdgToNumber } from "@/lib/units";
@@ -34,7 +37,8 @@ import { usdgToNumber } from "@/lib/units";
  * filling itself with invented positions.
  *
  * What the wallet did is read from the backend: the Activity tab lists its
- * transactions (`./portfolio-activity`).
+ * transactions (`./portfolio-activity`). So is the one figure here that is
+ * the market's and not the wallet's: the supply APY a deposit earns.
  */
 
 const emptySubscribe = () => () => {};
@@ -217,6 +221,9 @@ function SupplySection({ tier, name, connected }: { tier: MarketTier; name: stri
     maximumFractionDigits: 2,
   });
   const holding = connected && deposit !== null && deposit.deposited > 0n;
+  // What the deposit earns: the market's supply APY, which is the backend's figure.
+  const market = useMarket(tier);
+  const apy = depositApyPct(holding, market.data);
 
   return (
     <section aria-labelledby={id}>
@@ -247,10 +254,21 @@ function SupplySection({ tier, name, connected }: { tier: MarketTier; name: stri
         <div className="rounded-xl border border-border/70 bg-white/[0.03] px-5 py-4">
           <p className="text-[13px] text-steel-400">Net APY</p>
           <p className="font-display tnum mt-2 text-[22px] font-semibold leading-none text-foreground">
-            0<span className="text-steel-500">%</span>
+            {apy === null ? (
+              <span className={market.status === "loading" ? "animate-pulse text-steel-500" : "text-steel-500"}>
+                {NO_FIGURE}
+              </span>
+            ) : (
+              <>
+                {apy.toFixed(2)}
+                <span className="text-steel-500">%</span>
+              </>
+            )}
           </p>
         </div>
       </div>
+      {/* Said only to a wallet that has a deposit here: nobody else is shown a figure of the backend's. */}
+      {holding && <FiguresNotice figures={[market]} className="mt-3" />}
 
       <div className="mt-4 flex flex-wrap items-center justify-end gap-1">
         <Filter label="Network" options={ALL_NETWORKS} align="right" />

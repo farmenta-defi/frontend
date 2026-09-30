@@ -47,6 +47,11 @@ describe("describePosition", () => {
       expect(describePosition(collateral()).valueUsd).toBe(1_010);
     });
 
+    it("gives the uncollected fees in full, as a figure of their own", () => {
+      expect(describePosition(inWallet()).feesUsd).toBe(25);
+      expect(describePosition(collateral()).feesUsd).toBe(25);
+    });
+
     it("says the fee, the range in USDG, and that the price is in it", () => {
       const described = describePosition(inWallet());
 
@@ -69,6 +74,7 @@ describe("describePosition", () => {
       const described = describePosition(inWallet({ holdings: null }));
 
       expect(described.valueUsd).toBeNull();
+      expect(described.feesUsd).toBeNull();
       expect(described.inRange).toBeNull();
       // The ticks are still known, so the range itself is.
       expect(described.range).toMatch(/USDG$/);
@@ -86,6 +92,29 @@ describe("describePosition", () => {
       expect(described.valueUsd).toBe(0);
     });
 
+    it("keeps collateral and fees apart when the fees are over a tenth of the principal", () => {
+      // $1,000 of principal and $250 of fees. The market counts $100 of them: (1,000 + 100) with no haircut.
+      const holdings = { amount0: 2n * 10n ** 17n, amount1: 500_000_000n, principalUsd: 1_000n * WAD, feesUsd: 250n * WAD };
+      const risk = { positionValue: 1_100n * WAD, maxBorrow: 715_000_000n, healthFactor: maxUint256 };
+
+      const described = describePosition(collateral({ holdings, risk }));
+
+      expect(described.valueUsd).toBe(1_100);
+      expect(described.feesUsd).toBe(250);
+    });
+
+    it("still gives the fees of collateral the lens could not price", () => {
+      const unpriced = collateral({ risk: null, riskError: { code: "StalePrice", message: "stale" } });
+
+      expect(describePosition(unpriced).feesUsd).toBe(25);
+    });
+
+    it("reports no fees as zero, which is a figure", () => {
+      const holdings = { amount0: 0n, amount1: 900_000_000n, principalUsd: 900n * WAD, feesUsd: 0n };
+
+      expect(describePosition(inWallet({ holdings })).feesUsd).toBe(0);
+    });
+
     it("values collateral the lens could not price at what it holds", () => {
       const unpriced = collateral({ risk: null, riskError: { code: "StalePrice", message: "stale" } });
 
@@ -101,7 +130,14 @@ describe("describePosition", () => {
     it("has nothing to say about a token that does not exist", () => {
       const missing = inWallet({ place: "missing", poolId: null, poolKey: null, ticks: null, decimals: null, holdings: null });
 
-      expect(describePosition(missing)).toEqual({ fee: null, range: null, inRange: null, valueUsd: null, amounts: null });
+      expect(describePosition(missing)).toEqual({
+        fee: null,
+        range: null,
+        inRange: null,
+        valueUsd: null,
+        feesUsd: null,
+        amounts: null,
+      });
     });
 
     it("writes a full range without prices", () => {
