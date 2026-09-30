@@ -1,6 +1,6 @@
 # Farmenta · Web
 
-Frontend for Farmenta. Borrow USDG against Uniswap v4 LP position NFTs on Robinhood Chain (4663). Documentation: [tech-docs-pearl.vercel.app](https://tech-docs-pearl.vercel.app/). Built against spec **v0.9**.
+Frontend for Farmenta. Borrow USDG against Uniswap v4 LP position NFTs on Robinhood Chain (4663). Documentation: [docs.farmenta.fun](https://docs.farmenta.fun/). Built against spec **v0.9**.
 
 ## Stack
 - Next.js 16 (App Router, TypeScript, Turbopack) · pnpm
@@ -206,7 +206,7 @@ Four rules the pages keep:
 
 ## Honesty rules that are part of the design
 - **No figure is invented.** APY, APR, utilisation, TVL, a pool's terms and the charts are the backend's, and balances, debt, collateral value and health factor are read from the chain. Where a figure cannot be read there is a dash and a sentence that says why, never a number standing in for it.
-- **Owner powers are stated in the contract README and on the documentation site, not in the app.** Spec §15 items 9 (the upgrade key) and 11 (the owner can lower a liquidation threshold) are disclosed at [tech-docs-pearl.vercel.app](https://tech-docs-pearl.vercel.app/), page `risk/admin-powers`. Decided by the product owner on 28 Sep 2026 (spec v1.62); no page of this app carries them.
+- **Owner powers are stated in the contract README and on the documentation site, not in the app.** Spec §15 items 9 (the upgrade key) and 11 (the owner can lower a liquidation threshold) are disclosed at [docs.farmenta.fun](https://docs.farmenta.fun/), page `risk/admin-powers`. Decided by the product owner on 28 Sep 2026 (spec v1.62); no page of this app carries them.
 - **One colour rule for the health factor.** `hfTone()` in `src/components/ui/health-bar.tsx` decides the colour everywhere, so the same number is never cyan on one page and orange on another.
 
 ## Notes
