@@ -4,9 +4,10 @@
  * `./activity` convert.
  *
  * The shape is the backend's (spec §13, routes in `src/markets/markets.controller.ts`
- * and `src/activity/activity.controller.ts` of the `backend` repo). An amount is a decimal string of base units with the
- * unit in the field's name, a percentage is a string with two decimals, and
- * `null` is a figure the backend does not have.
+ * and `src/activity/activity.controller.ts` of the `backend` repo). An amount
+ * is a decimal string of base units with the unit in the field's name, a
+ * percentage is a string with two decimals, and `null` is a figure the backend
+ * does not have.
  */
 
 /** One reading of a market: the latest, or one step of its history. */

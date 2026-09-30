@@ -88,8 +88,10 @@ first, from `GET /activity/:address`.
   with the cursor the backend gave. A refresh, every 30 seconds and after each transaction the
   app sends, reads the pages on screen again from the first, so a new transaction does not make
   a row appear twice or drop out between two pages.
-- **The rows are a few seconds behind the chain**: the backend reads them from the indexer. A
-  transaction the app has just confirmed is listed with the next refresh.
+- **The rows can be up to a minute behind the chain.** The indexer follows the chain by a few
+  seconds, the backend keeps an answer for up to 30 seconds, and the tab asks every 30. A
+  transaction the app has just confirmed is listed with the refresh that follows it, about 30
+  seconds later.
 - **When the backend cannot be read the tab says so**, and links to the wallet on the block
   explorer. It says "No transactions yet." only for a wallet the backend answered for and has
   no transaction of.

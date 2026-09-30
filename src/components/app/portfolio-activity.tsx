@@ -27,9 +27,11 @@ import { cn } from "@/lib/utils";
  * (FAR-71): what it supplied and withdrew as a lender, and what happened to
  * the positions it borrowed against.
  *
- * The rows are the backend's copy of the chain's logs, a few seconds behind
- * the chain. When the copy cannot be read the tab says so and points at the
- * block explorer; it never says "no transactions" for a history it did not get.
+ * The rows are the backend's copy of the chain's logs, up to a minute behind
+ * the chain: the indexer follows it by seconds, the backend keeps an answer
+ * for up to 30 seconds, and the tab asks every 30. When the copy cannot be
+ * read the tab says so and points at the block explorer; it never says "no
+ * transactions" for a history it did not get.
  */
 const explorer = chain.blockExplorers.default.url;
 
