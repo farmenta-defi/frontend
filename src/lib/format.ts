@@ -20,6 +20,12 @@ export const fmtUsdExact = (n: number) =>
 
 export const fmtUsdg = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
+/**
+ * USDG to the last decimal it has, for a row of a history: what moved is
+ * stated, not rounded. "0.100613", "1,250.5", "30".
+ */
+export const fmtUsdgFull = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 6 });
+
 export const fmtPct = (n: number) => `${n.toFixed(2)}%`;
 
 /**
@@ -59,4 +65,15 @@ export const fmtCompactUsdg = (n: number) => {
   return `${figure}${unit} USDG`;
 };
 
+const two = (n: number) => String(n).padStart(2, "0");
+
+/** "2026-09-27 15:34:25", always UTC so every reader sees the same instant. Takes milliseconds since the epoch. */
+export const fmtTimestampUtc = (t: number) => {
+  const d = new Date(t);
+  return `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`;
+};
+
 export const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
+
+/** A transaction hash at the length a table column takes: "0x45526648…7eb0". */
+export const shortHash = (hash: string) => `${hash.slice(0, 10)}…${hash.slice(-4)}`;
