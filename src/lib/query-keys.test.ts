@@ -85,6 +85,24 @@ describe("invalidateAfterTransaction", () => {
       expect(stale()).toEqual(fetched.map(key));
     });
 
+    it("invalidates the pool's list of transactions, whichever kind it was narrowed to, and no other pool's", async () => {
+      const fetched = [backendKeys.poolActivity(ETH_USDG, "all"), backendKeys.poolActivity(ETH_USDG, "borrow")];
+      const { queryClient, stale } = clientWith([...fetched, backendKeys.poolActivity(WETH_USDG, "all")]);
+
+      await invalidateAfterTransaction(queryClient, { tier: "blue-chip", account: ALICE, poolId: ETH_USDG });
+
+      expect(stale()).toEqual(fetched.map(key));
+    });
+
+    it("a supply, which has no pool, leaves every pool's list of transactions as it is", async () => {
+      const lists = [backendKeys.poolActivity(ETH_USDG, "all"), backendKeys.poolActivity(WETH_USDG, "all")];
+      const { queryClient, stale } = clientWith(lists);
+
+      await invalidateAfterTransaction(queryClient, { tier: "blue-chip", account: ALICE, poolId: null });
+
+      expect(stale()).toEqual([]);
+    });
+
     it("a supply, which has no pool, still invalidates the market and the account", async () => {
       const keys = [backendKeys.markets(), backendKeys.pools("meme"), backendKeys.portfolio(ALICE)];
       const { queryClient, stale } = clientWith([...keys, backendKeys.pool(ETH_USDG)]);
