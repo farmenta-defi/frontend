@@ -51,7 +51,8 @@ META and CASHCAT have no logo in `public/` yet and are drawn as a lettered disc.
 
 Every figure on a page that is not about the connected wallet comes from the backend, through
 `src/lib/backend/`: supply APY, borrow APR, utilisation and TVL of a market, a pool's terms, its
-debt and its room to borrow, and the history the charts draw.
+debt and its room to borrow, and the history the charts draw. So does the list of the connected
+wallet's transactions (see "A wallet's history" below).
 
 - **The address is `NEXT_PUBLIC_API_URL`.** It is public. The paid RPC stays on the backend.
 - **Units are converted in the data layer, once.** The backend sends an amount as a decimal
@@ -70,6 +71,28 @@ debt and its room to borrow, and the history the charts draw.
 - **A pool's page has no list of transactions.** The backend has no route for a pool's activity.
 - The tests of the data layer read answers recorded from the live backend
   (`src/lib/backend/fixtures/`).
+
+## A wallet's history
+
+The Activity tab of Portfolio lists the connected wallet's transactions in Farmenta, newest
+first, from `GET /activity/:address`.
+
+- **Every row the backend sends is listed.** It sends what the wallet supplied and withdrew as a
+  lender, shares it sent to another wallet, and what happened to the positions it borrowed
+  against: collateral in and out, loans, repayments, changes of liquidity, fees collected, and
+  liquidations. A kind the app has no name for is listed as "Other", with its date and its
+  transaction. The menu above the table narrows the rows on screen; it asks the backend nothing.
+- **The amount is the USDG that moved**, to its last decimal: supplied, withdrawn, borrowed,
+  repaid, or repaid by a liquidator. A row that moves no USDG has a dash.
+- **25 rows are read at a time.** "Load more" asks for the rows after the last one on screen,
+  with the cursor the backend gave. A refresh, every 30 seconds and after each transaction the
+  app sends, reads the pages on screen again from the first, so a new transaction does not make
+  a row appear twice or drop out between two pages.
+- **The rows are a few seconds behind the chain**: the backend reads them from the indexer. A
+  transaction the app has just confirmed is listed with the next refresh.
+- **When the backend cannot be read the tab says so**, and links to the wallet on the block
+  explorer. It says "No transactions yet." only for a wallet the backend answered for and has
+  no transaction of.
 
 ## On-chain actions
 
@@ -150,7 +173,7 @@ pure black.
 - `src/lib/chain.ts`: the chain, importable from Server Components (`lib/wagmi.ts` calls RainbowKit's client-only `getDefaultConfig()` at module scope, so it cannot be imported server-side)
 - `src/lib/wagmi.ts`: transports + RainbowKit config
 - `src/lib/markets.ts`: the two markets and the six listed pools: ids, `PoolKey`s and names, no figures
-- `src/lib/backend/`: the data layer: the backend's routes, the conversion of its answers into figures, the hooks, and the recorded answers the tests read
+- `src/lib/backend/`: the data layer: the backend's routes, the conversion of its answers into figures and into the rows of a wallet's history, the hooks, and the recorded answers the tests read
 - `src/lib/risk-params.ts`: what belongs to a market and not to a pool (close factor, market debt cap, reserve factor and floor, rate model), from spec §6.2
 - `src/lib/format.ts`: how a figure is written, and the dash for one that is absent
 - `src/lib/chart-axis.ts`: the value axis of a chart, which has to draw a series that is zero
@@ -161,7 +184,7 @@ pure black.
 - `src/components/ui/`: primitives (button, badge, field, health bar, logo, tabs, segmented control, select menu, asset and address marks)
 - `src/components/site/`: nav, wallet button, app shell, page header
 - `src/components/landing/`: the hero for `/`, which is a single screen with nothing under it
-- `src/components/app/`: the market directory, the pool page's action rail, charts and activity table, and the portfolio view
+- `src/components/app/`: the market directory, the pool page's action rail, charts and activity table, and the portfolio view with the wallet's history
 - `src/app/(workspace)/`: the app: `market`, `portfolio`, and one page per pool; `lend` and `borrow` are old addresses that redirect into `market`
 
 ## Honesty rules that are part of the design
@@ -170,7 +193,7 @@ pure black.
 - **One colour rule for the health factor.** `hfTone()` in `src/components/ui/health-bar.tsx` decides the colour everywhere, so the same number is never cyan on one page and orange on another.
 
 ## Notes
-- The Portfolio page shows the connected wallet, its deposit in each market, and the loans on the positions this browser knows for it, all read from the chain and pinned to `chainId: 4663`. Net APY and the Activity tab are still empty; they come from the backend's portfolio and activity routes (FAR-71).
+- The Portfolio page shows the connected wallet, its deposit in each market, and the loans on the positions this browser knows for it, all read from the chain and pinned to `chainId: 4663`. The Activity tab is read from the backend's activity route. Net APY is still empty; it comes from the backend's portfolio route (FAR-71).
 - The Market and Rates charts on a pool's page are the history of the pool's market: lenders supply to the market, and every pool in it borrows from the same USDG at the same rate.
 - Some ISPs DNS-hijack `rpc.mainnet.chain.robinhood.com`; set `NEXT_PUBLIC_RPC_URL` to a provider endpoint (Alchemy free tier) if reads fail.
 - `src/app/icon.png` and `apple-icon.png` are generated from the logo; regenerate them if the logo changes.
