@@ -52,7 +52,8 @@ META and CASHCAT have no logo in `public/` yet and are drawn as a lettered disc.
 Every figure on a page that is not about the connected wallet comes from the backend, through
 `src/lib/backend/`: supply APY, borrow APR, utilisation and TVL of a market, a pool's terms, its
 debt and its room to borrow, and the history the charts draw. So does the list of the connected
-wallet's transactions (see "A wallet's history" below).
+wallet's transactions and the list of a pool's (see "A wallet's history" and "A pool's history"
+below).
 
 - **The address is `NEXT_PUBLIC_API_URL`.** It is public. The paid RPC stays on the backend.
 - **Units are converted in the data layer, once.** The backend sends an amount as a decimal
@@ -68,7 +69,7 @@ wallet's transactions (see "A wallet's history" below).
   wallet's RPC.
 - **A pool the backend lists and the app has no page for is not shown**, and is reported in the
   browser's console.
-- **A pool's page has no list of transactions.** The backend has no route for a pool's activity.
+- **A pool's page lists the pool's transactions** (see "A pool's history" below).
 - The tests of the data layer read answers recorded from the live backend
   (`src/lib/backend/fixtures/`).
 
@@ -95,6 +96,24 @@ first, from `GET /activity/:address`.
 - **When the backend cannot be read the tab says so**, and links to the wallet on the block
   explorer. It says "No transactions yet." only for a wallet the backend answered for and has
   no transaction of.
+
+## A pool's history
+
+The Activity section of a pool's page lists the transactions on the pool's positions, from every
+wallet, newest first, from `GET /pools/:poolId/activity`.
+
+- **It holds what happens to a position in the pool**: collateral in and out, loans, repayments
+  and liquidations. A lender's supply and withdrawal are not there: lenders supply to the market,
+  not to a pool, and a wallet's own are in its Portfolio.
+- **The menu above the table is the backend's filter.** Choosing a kind asks the backend for
+  that kind from its first page; the wallet's menu narrows what is already on screen.
+- **Each row names the position and whose it is.** The date links to the transaction on the
+  block explorer and the wallet to its address there; the column beside the action rail has no
+  room for a hash. For a liquidation the wallet is the one that was liquidated.
+- **Amounts, pages, refreshes and how far behind the chain the rows can be** are as in a
+  wallet's history.
+- **When the backend cannot be read the section says so.** It says "No transactions in this pool
+  yet." only for a pool the backend answered for.
 
 ## On-chain actions
 

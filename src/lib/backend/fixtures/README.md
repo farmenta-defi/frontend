@@ -35,6 +35,19 @@ at the time. Nobody had deposited collateral, borrowed or been liquidated, so th
 recorded row of those kinds: the tests build them from the fields the backend's query selects
 and say so.
 
+The answers of `GET /pools/:poolId/activity` were recorded from the live backend (`backend`
+`fab3c76`, the first day the route was served) on 30 Sep 2026 at 08:05 UTC, and only re-indented:
+
+| File | Request | Status |
+|---|---|---|
+| `pool-activity-eth-usdg.json` | `GET /pools/0xbac3…e551/activity?limit=25` | 200 |
+| `pool-activity-eth-usdg-borrow.json` | `GET /pools/0xbac3…e551/activity?limit=25&kind=borrow` | 200 |
+| `pool-activity-not-listed.json` | `GET /pools/0x54f7…ba32/activity?limit=25`, a pool that is not listed | 404 |
+| `pool-activity-kind-refused.json` | `GET /pools/0xbac3…e551/activity?limit=25&kind=supply` | 400 |
+
+Both lists are empty: no position had been deposited in either market. The tests build the rows
+of a pool's history from the fields and the nulls the backend's service writes, and say so.
+
 To record them again:
 
 ```sh

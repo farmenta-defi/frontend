@@ -2,13 +2,19 @@ import type { Address, Hex } from "viem";
 
 import type { MarketTier } from "@/lib/risk-params";
 
-import { activityPageOf, type ActivityPage } from "./activity";
+import {
+  activityPageOf,
+  poolActivityPageOf,
+  type ActivityPage,
+  type PoolActivityFilter,
+  type PoolActivityPage,
+} from "./activity";
 import { listedPoolOf, marketOf, poolOf, type HistoryRange, type ListedPool, type MarketFigures, type PoolFigures } from "./figures";
-import { readActivity, readListedPools, readMarkets, readPool } from "./wire";
+import { readActivity, readListedPools, readMarkets, readPool, readPoolActivity } from "./wire";
 
 /**
  * The backend, as the app asks it (FAR-80): the markets, the pools of one
- * market, one pool, and a wallet's history (FAR-71). What comes back is
+ * market, one pool, and the history of a wallet and of a pool (FAR-71). What comes back is
  * already in the units a page shows; a component never converts.
  *
  * These are figures to show. Nothing a transaction is sized from comes from
@@ -153,6 +159,29 @@ export function fetchActivity(
   );
 }
 
+/**
+ * One page of a pool's history, newest first: the transactions of every
+ * wallet on the positions of that pool. `kind` narrows it to one kind, which
+ * the backend does; "all" asks for every kind.
+ */
+export function fetchPoolActivity(
+  poolId: Hex,
+  kind: PoolActivityFilter = "all",
+  cursor: string | null = null,
+  options: RequestOptions = {},
+): Promise<PoolActivityPage> {
+  const only = kind === "all" ? "" : `&kind=${kind}`;
+  const after = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+  return get(
+    `/pools/${poolId}/activity?limit=${ACTIVITY_PAGE_SIZE}${only}${after}`,
+    (body) => {
+      const activity = readPoolActivity(body);
+      return activity ? poolActivityPageOf(activity) : null;
+    },
+    options,
+  );
+}
+
 /** What a page says when the figures did not come. One sentence per reason, and what still works. */
 export function failureMessage(error: unknown): string {
   const kind = error instanceof BackendError ? error.kind : "unreachable";
@@ -172,22 +201,31 @@ export function failureMessage(error: unknown): string {
 }
 
 /**
- * What the Activity tab says when a wallet's history did not come. The
- * history is the backend's copy of the chain's logs: the transactions are on
- * the chain whether or not the copy can be read.
+ * What a list of transactions says when it did not come: the Activity tab of
+ * a wallet, or the Activity section of a pool. The list is the backend's copy
+ * of the chain's logs: the transactions are on the chain whether or not the
+ * copy can be read.
  */
-export function historyFailureMessage(error: unknown): string {
+export function historyFailureMessage(error: unknown, of: "wallet" | "pool" = "wallet"): string {
   const kind = error instanceof BackendError ? error.kind : "unreachable";
-  const onchain = "Your transactions are on the chain, and the block explorer lists them.";
+  const [history, onchain] =
+    of === "wallet"
+      ? ["your history is", "Your transactions are on the chain, and the block explorer lists them."]
+      : ["this pool's transactions are", "They are on the chain, and the block explorer lists them."];
   switch (kind) {
     case "not-configured":
-      return `This build has no market data service configured, so there is no history to show. ${onchain}`;
+      return of === "wallet"
+        ? `This build has no market data service configured, so there is no history to show. ${onchain}`
+        : `This build has no market data service configured, so ${history} not shown. ${onchain}`;
     case "unavailable":
-      return `The market data service is catching up with the chain, so your history is not shown. ${onchain}`;
+      return `The market data service is catching up with the chain, so ${history} not shown. ${onchain}`;
     case "not-found":
+      return of === "pool"
+        ? `The market data service does not list this pool, so ${history} not shown. ${onchain}`
+        : `The market data service answered in a form this app does not read, so ${history} not shown. ${onchain}`;
     case "invalid":
-      return `The market data service answered in a form this app does not read, so your history is not shown. ${onchain}`;
+      return `The market data service answered in a form this app does not read, so ${history} not shown. ${onchain}`;
     case "unreachable":
-      return `The market data service did not answer, so your history is not shown. ${onchain}`;
+      return `The market data service did not answer, so ${history} not shown. ${onchain}`;
   }
 }

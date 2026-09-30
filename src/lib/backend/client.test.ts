@@ -10,6 +10,7 @@ import {
   fetchListedPools,
   fetchMarkets,
   fetchPool,
+  fetchPoolActivity,
   historyFailureMessage,
 } from "./client";
 import activityAddressRefused from "./fixtures/activity-address-refused.json";
@@ -18,6 +19,10 @@ import activityNone from "./fixtures/activity-none.json";
 import activityPageOne from "./fixtures/activity-page-1.json";
 import activityPageTwo from "./fixtures/activity-page-2.json";
 import markets from "./fixtures/markets.json";
+import poolActivityBorrow from "./fixtures/pool-activity-eth-usdg-borrow.json";
+import poolActivityEmpty from "./fixtures/pool-activity-eth-usdg.json";
+import poolActivityKindRefused from "./fixtures/pool-activity-kind-refused.json";
+import poolActivityNotListed from "./fixtures/pool-activity-not-listed.json";
 import poolEthUsdg from "./fixtures/pool-eth-usdg.json";
 import poolNotListed from "./fixtures/pool-not-listed.json";
 import poolsMeme from "./fixtures/pools-meme.json";
@@ -401,6 +406,182 @@ describe("historyFailureMessage", () => {
       for (const error of [...KINDS.map((kind) => new BackendError(kind, kind)), new TypeError("fetch failed"), undefined]) {
         expect(historyFailureMessage(error)).toMatch(/on the chain, and the block explorer lists them/);
       }
+    });
+  });
+});
+
+/**
+ * A backend that pages a pool's history the way the live one does (`backend`
+ * `fab3c76`, `src/activity/pool-activity.service.ts`): every row with every
+ * field, newest first, one kind when `kind` is given, the rows after the
+ * cursor, and the cursor of the last row sent on every page.
+ */
+function pagingPool(count: number) {
+  const kinds = ["deposit", "borrow", "repay", "withdraw", "liquidation"];
+  const history = Array.from({ length: count }, (_, index) => ({
+    market: "0x1f69d27f1ac7415a4252957951900130cb885484",
+    poolId: ETH_USDG,
+    timestamp: String(1_790_750_000 + index),
+    blockNumber: String(76_300_000 + Math.floor(index / 3)),
+    logIndex: index % 3,
+    transactionHash: `0x${index.toString(16).padStart(64, "0")}`,
+    tokenId: "3402463",
+    owner: "0x5619cf6fc59ab4f374b7c843ba993e1cbe629fa6",
+    kind: kinds[index % kinds.length],
+    amountUsdg: ["borrow", "repay"].includes(kinds[index % kinds.length]) ? "1000000" : null,
+    liquidator: kinds[index % kinds.length] === "liquidation" ? "0x020eede0121e317e338d24b20754f55cced00cae" : null,
+    repaidUsdg: kinds[index % kinds.length] === "liquidation" ? "1000000" : null,
+    badDebtUsdg: kinds[index % kinds.length] === "liquidation" ? "0" : null,
+    full: kinds[index % kinds.length] === "liquidation" ? false : null,
+  })).reverse();
+  const requests: string[] = [];
+
+  const fetch = vi.fn(async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    requests.push(`${url.pathname}${url.search}`);
+    const limit = Number(url.searchParams.get("limit"));
+    const kind = url.searchParams.get("kind");
+    const [block, index] = (url.searchParams.get("cursor") ?? "").split(":");
+    const ofKind = kind ? history.filter((row) => row.kind === kind) : history;
+    const after = url.searchParams.has("cursor")
+      ? ofKind.filter((row) => BigInt(row.blockNumber) < BigInt(block) || (row.blockNumber === block && row.logIndex < Number(index)))
+      : ofKind;
+    const items = after.slice(0, limit);
+    const last = items.at(-1);
+    const body = { items, nextCursor: last ? `${last.blockNumber}:${last.logIndex}` : null, hasMore: after.length > limit };
+    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof globalThis.fetch;
+
+  return { fetch, requests, ids: (kind?: string) => history.filter((row) => !kind || row.kind === kind).map((row) => `${row.blockNumber}:${row.logIndex}`) };
+}
+
+describe("a pool's history", () => {
+  describe("positive", () => {
+    it("asks for the first page of a pool's history and reads the recorded answer", async () => {
+      const { fetch, requests } = answering(poolActivityEmpty);
+
+      const page = await fetchPoolActivity(ETH_USDG, "all", null, { baseUrl: BASE, fetch });
+
+      expect(requests).toEqual([`${BASE}/pools/${ETH_USDG}/activity?limit=${ACTIVITY_PAGE_SIZE}`]);
+      expect(page).toEqual({ rows: [], next: null });
+    });
+
+    it("asks the backend for one kind, under the name the route takes, and reads the recorded answer", async () => {
+      const { fetch, requests } = answering(poolActivityBorrow);
+
+      const page = await fetchPoolActivity(ETH_USDG, "borrow", null, { baseUrl: BASE, fetch });
+
+      expect(requests).toEqual([`${BASE}/pools/${ETH_USDG}/activity?limit=${ACTIVITY_PAGE_SIZE}&kind=borrow`]);
+      expect(page.rows).toEqual([]);
+    });
+
+    it("reads a pool's history of many pages to its end, every row once and in order", async () => {
+      const backend = pagingPool(3 * ACTIVITY_PAGE_SIZE + 4);
+      const ids: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const page = await fetchPoolActivity(ETH_USDG, "all", cursor, { baseUrl: BASE, fetch: backend.fetch });
+        ids.push(...page.rows.map((row) => row.id));
+        cursor = page.next;
+      } while (cursor !== null && ids.length < 1_000);
+
+      expect(backend.requests).toHaveLength(4);
+      expect(ids).toEqual(backend.ids());
+      expect(backend.requests[1]).toMatch(/&cursor=\d+%3A\d+$/);
+    });
+  });
+
+  describe("negative", () => {
+    it("reports a pool the backend does not list, as recorded for the old ETH/USDG pool", async () => {
+      const { fetch } = answering(poolActivityNotListed, 404);
+
+      expect(await failure(fetchPoolActivity(OLD_ETH_USDG, "all", null, { baseUrl: BASE, fetch }))).toMatchObject({
+        kind: "not-found",
+        status: 404,
+      });
+    });
+
+    it("reports a refused kind as an answer the app cannot use, as recorded", async () => {
+      const { fetch } = answering(poolActivityKindRefused, 400);
+
+      expect(await failure(fetchPoolActivity(ETH_USDG, "all", null, { baseUrl: BASE, fetch }))).toMatchObject({
+        kind: "invalid",
+        status: 400,
+      });
+    });
+
+    it("reports a backend whose indexer is behind, as the live one answered on 30 Sep 2026", async () => {
+      // Not kept as a file: the answer was read from the live backend while its indexer was 88 seconds behind.
+      const { fetch } = answering({ message: "Indexer is behind", error: "Service Unavailable", statusCode: 503 }, 503);
+
+      expect(await failure(fetchPoolActivity(ETH_USDG, "all", null, { baseUrl: BASE, fetch }))).toMatchObject({
+        kind: "unavailable",
+        status: 503,
+      });
+    });
+
+    it("reports a wallet's history given for a pool's as another shape", async () => {
+      const { fetch } = answering(activityPageOne);
+
+      expect(await failure(fetchPoolActivity(ETH_USDG, "all", null, { baseUrl: BASE, fetch }))).toMatchObject({ kind: "invalid" });
+    });
+  });
+
+  describe("edge case", () => {
+    it("asks for all kinds without naming one", async () => {
+      const { fetch, requests } = answering(poolActivityEmpty);
+
+      await fetchPoolActivity(ETH_USDG, "all", "76300000:2", { baseUrl: BASE, fetch });
+
+      expect(requests[0]).not.toMatch(/kind=/);
+      expect(requests[0]).toMatch(/&cursor=76300000%3A2$/);
+    });
+
+    it("pages one kind to its end with the kind on every request", async () => {
+      const backend = pagingPool(12 * ACTIVITY_PAGE_SIZE);
+      const ids: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const page = await fetchPoolActivity(ETH_USDG, "repay", cursor, { baseUrl: BASE, fetch: backend.fetch });
+        ids.push(...page.rows.map((row) => row.id));
+        expect(page.rows.every((row) => row.kind === "repay")).toBe(true);
+        cursor = page.next;
+      } while (cursor !== null && ids.length < 1_000);
+
+      expect(ids).toEqual(backend.ids("repay"));
+      expect(backend.requests.length).toBeGreaterThan(1);
+      expect(backend.requests.every((request) => request.includes("&kind=repay"))).toBe(true);
+    });
+  });
+});
+
+describe("historyFailureMessage for a pool", () => {
+  const KINDS = ["not-configured", "unreachable", "unavailable", "not-found", "invalid"] as const;
+
+  describe("positive", () => {
+    it("says why the pool's transactions are not shown, one sentence per reason", () => {
+      const messages = KINDS.map((kind) => historyFailureMessage(new BackendError(kind, kind), "pool"));
+
+      expect(new Set(messages).size).toBe(5);
+      expect(historyFailureMessage(new BackendError("unavailable", "", 503), "pool")).toMatch(/catching up with the chain/);
+      expect(historyFailureMessage(new BackendError("not-found", "", 404), "pool")).toMatch(/does not list this pool/);
+    });
+  });
+
+  describe("negative", () => {
+    it("does not speak of the reader's own transactions: a pool's are everybody's", () => {
+      for (const kind of KINDS) {
+        expect(historyFailureMessage(new BackendError(kind, kind), "pool")).not.toMatch(/\byour\b/i);
+      }
+    });
+  });
+
+  describe("edge case", () => {
+    it("leaves the wallet's sentences as they were", () => {
+      expect(historyFailureMessage(new BackendError("unreachable", ""))).toBe(
+        "The market data service did not answer, so your history is not shown. Your transactions are on the chain, and the block explorer lists them.",
+      );
+      expect(historyFailureMessage(new BackendError("not-configured", ""))).toMatch(/so there is no history to show/);
     });
   });
 });
