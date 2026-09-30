@@ -106,8 +106,14 @@ borrow, repay, and withdraw collateral. They live in `src/lib/onchain/`.
   price range; the token id is a detail. The backend's list comes first when the data layer
   lands, and this is what is left when the backend is down.
 - **The logs are read through the chain's public RPC**, whatever `NEXT_PUBLIC_RPC_URL` is: a
-  free-tier provider key refuses a log range of more than 10 blocks. A request is tried three
+  free-tier provider key refuses a log range of more than 10 blocks. A request is tried four
   times; after that the list says it could not be loaded and offers a retry.
+- **The logs are read in windows of 9,900,000 blocks, one request every 300 ms.** The public
+  RPC refuses a range of more than 10,000,000 blocks, and the chain is past block 75,600,000:
+  eight windows for PositionManager and one for each market. Sent together they are answered,
+  and then every request of the page is refused (HTTP 429) for 2 to 4.5 seconds; the RPC takes
+  about 3.5 requests a second. The search took 3.9 to 6.8 seconds in ten runs, none of which
+  failed.
 - **A paid RPC key in `NEXT_PUBLIC_RPC_URL` is readable by anyone who opens the app.** Restrict
   it to the app's domain at the provider.
 
