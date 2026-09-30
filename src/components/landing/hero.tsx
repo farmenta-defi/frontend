@@ -33,7 +33,7 @@ export function Hero() {
               <ArrowRight className="size-[18px]" strokeWidth={2} />
             </Link>
             <a
-              href="https://tech-docs-pearl.vercel.app/"
+              href="https://docs.farmenta.fun/"
               target="_blank"
               rel="noreferrer"
               className={buttonClasses({ variant: "secondary", size: "lg" })}
