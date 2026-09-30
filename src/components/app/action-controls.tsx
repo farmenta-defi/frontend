@@ -168,8 +168,8 @@ export function ActionButton({
   }
 
   const refused = !session.gate.ok ? session.gate : !gate.ok ? gate : null;
-  // A dimmed gradient still reads as a live button, so the blocked state
-  // drops the gradient entirely rather than fading it.
+  // A dimmed fill still reads as a live button, so the blocked state
+  // drops the fill entirely rather than fading it.
   if (refused || busy || !session.clients) {
     return (
       <button type="button" disabled className={cn(blocked, className)}>

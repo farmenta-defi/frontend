@@ -45,7 +45,7 @@ export function SiteNav({ variant = "app" }: { variant?: "landing" | "app" }) {
       className={cn(
         "sticky top-0 z-50 w-full transition-[background-color,border-color,backdrop-filter] duration-300",
         scrolled || open
-          ? "border-b border-border bg-[rgba(5,8,15,0.82)] backdrop-blur-xl"
+          ? "border-b border-border bg-background/82 backdrop-blur-xl"
           : "border-b border-transparent",
       )}
     >
@@ -99,7 +99,7 @@ export function SiteNav({ variant = "app" }: { variant?: "landing" | "app" }) {
       </div>
 
       {open && (
-        <div id="mobile-navigation" className="border-t border-border bg-[rgba(5,8,15,0.96)] px-5 pb-5 pt-3 backdrop-blur-xl md:hidden">
+        <div id="mobile-navigation" className="border-t border-border bg-background/96 px-5 pb-5 pt-3 backdrop-blur-xl md:hidden">
           <nav className="flex flex-col">
             {NAV_ITEMS.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);

@@ -73,7 +73,7 @@ export function TimeSeriesChart(props: {
       <div
         role="img"
         aria-label={`${props.label}: no history yet.`}
-        className="flex items-center justify-center rounded-xl bg-[rgba(148,178,214,0.045)] text-[13px] text-steel-500"
+        className="flex items-center justify-center text-[13px] text-steel-500"
         style={{ height: HEIGHT - AXIS }}
       >
         No history yet
@@ -211,8 +211,6 @@ function Plot({
           </linearGradient>
         </defs>
 
-        <rect width={width} height={plotBottom} rx={12} fill="rgba(148, 178, 214, 0.045)" />
-
         {ticks.map((tick) => (
           <g key={tick}>
             <line
@@ -220,7 +218,7 @@ function Plot({
               x2={width}
               y1={y(tick)}
               y2={y(tick)}
-              stroke="rgba(148, 178, 214, 0.1)"
+              stroke="var(--chart-grid)"
               strokeWidth={1}
             />
           </g>
@@ -279,7 +277,7 @@ function Plot({
                 x2={at}
                 y1={plotBottom}
                 y2={plotBottom + 5}
-                stroke="rgba(148, 178, 214, 0.28)"
+                stroke="var(--chart-axis)"
                 strokeWidth={1}
               />
               <text
@@ -301,7 +299,7 @@ function Plot({
               x2={focusX}
               y1={PAD_TOP}
               y2={plotBottom}
-              stroke="rgba(233, 239, 248, 0.32)"
+              stroke="var(--chart-cursor)"
               strokeWidth={1}
             />
             <circle cx={focusX} cy={y(focus.v)} r={5} fill={SERIES} stroke={SURFACE} strokeWidth={2} />

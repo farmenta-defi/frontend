@@ -174,6 +174,18 @@ Type: **Plus Jakarta Sans** (display/figures), **Inter** (UI), **JetBrains Mono*
 (addresses, token ids). Radius is `0.875rem`; the ground is navy-tinted, never
 pure black.
 
+Four rules the pages keep:
+
+- **Fills are flat.** No gradient on text or on a control, and no coloured glow
+  under one. The page has one light, top right, and it does not move.
+- **One layer in a card.** A card holds no card: its parts are separated by a
+  rule or by space. A chart is drawn on its card, not in a box of its own.
+- **Colours come from the tokens** in `globals.css`. The exceptions are other
+  projects' logos, the avatar drawn from an address, and the browser's theme
+  colour, which a meta tag cannot read from a variable.
+- **A control is shown when it has something to choose.** A filter with one
+  choice in it, or a button that does nothing, is left out until it has.
+
 ## Structure
 - `src/lib/chain.ts`: the chain, importable from Server Components (`lib/wagmi.ts` calls RainbowKit's client-only `getDefaultConfig()` at module scope, so it cannot be imported server-side)
 - `src/lib/wagmi.ts`: transports + RainbowKit config

@@ -28,8 +28,8 @@ export type AssetId =
   | "USDC"
   | "USDT";
 
-/** The table's own ground, so a stacked mark can notch itself out of the one behind. */
-const GROUND = "#0b0c0e";
+/** The card's own ground, so a stacked mark can notch itself out of the one behind. */
+const GROUND = "var(--card)";
 
 type Mark = {
   src: string;
@@ -55,8 +55,8 @@ const marks: Record<AssetId, Mark> = {
   arbitrum: { src: "/arbitrum-logo.svg", name: "Arbitrum", zoom: "185%" },
   // The Ethereum diamond ships as black paths on nothing, invisible on this
   // ground, so it gets the light disc it is normally shown on.
-  ETH: { src: "/ethereum-logo.svg", name: "Ether", round: true, disc: "#eef1f6", zoom: "62%" },
-  WETH: { src: "/ethereum-logo.svg", name: "Wrapped Ether", round: true, disc: "#eef1f6", zoom: "62%" },
+  ETH: { src: "/ethereum-logo.svg", name: "Ether", round: true, disc: "var(--mark-disc)", zoom: "62%" },
+  WETH: { src: "/ethereum-logo.svg", name: "Wrapped Ether", round: true, disc: "var(--mark-disc)", zoom: "62%" },
   // Already drawn as a disc on nothing, so the mask only has to follow its edge.
   cbBTC: { src: "/cbbtc-logo.png", name: "Coinbase Wrapped BTC", round: true },
   // The five below are square PNGs whose art runs to the canvas edge; the mask
@@ -204,7 +204,7 @@ export function AssetPair({
         role="tooltip"
         // Above rather than below: the table clips its own overflow, and there
         // is always a header row overhead but not always a row underneath.
-        className="pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden whitespace-nowrap rounded-lg border border-border bg-[#292a2c] px-2 py-1 text-[11px] font-normal text-foreground shadow-xl group-hover/pair:block"
+        className="pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden whitespace-nowrap rounded-lg border border-border bg-popover px-2 py-1 text-[11px] font-normal text-foreground shadow-xl group-hover/pair:block"
       >
         {label}
         {hint && <span className="text-steel-400"> · {hint}</span>}

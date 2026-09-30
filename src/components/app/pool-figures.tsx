@@ -75,7 +75,7 @@ function Metric({
         <Info className="size-3.5 shrink-0 text-steel-600" aria-hidden />
         <span
           role="tooltip"
-          className="pointer-events-none absolute bottom-full left-0 z-30 mb-2 hidden w-60 rounded-lg border border-border bg-[#292a2c] px-2.5 py-2 text-[11px] leading-[17px] text-steel-300 shadow-xl group-hover/hint:block"
+          className="pointer-events-none absolute bottom-full left-0 z-30 mb-2 hidden w-60 rounded-lg border border-border bg-popover px-2.5 py-2 text-[11px] leading-[17px] text-steel-300 shadow-xl group-hover/hint:block"
         >
           {hint}
         </span>

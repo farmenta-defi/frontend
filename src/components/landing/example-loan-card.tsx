@@ -136,7 +136,7 @@ export function ExampleLoanCard() {
         Drag either number to see how the health factor answers.
       </p>
 
-      <div className="mt-4 rounded-lg border border-border bg-black/20 p-4">
+      <div className="mt-4 border-t border-border pt-4">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-[13px] text-steel-400">Health factor</span>
           <span className="flex items-baseline gap-2.5">

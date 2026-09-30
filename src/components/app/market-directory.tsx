@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Maximize2, Minimize2, Search, Settings2, SlidersHorizontal } from "lucide-react";
+import { ArrowUpRight, Maximize2, Minimize2, Search, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -16,7 +16,13 @@ import { fmtCompactUsdg, fmtPct, NO_FIGURE, orDash } from "@/lib/format";
 import { COLLATERAL_POOLS, MARKETS, poolHref, type CollateralPool } from "@/lib/markets";
 import { cn } from "@/lib/utils";
 
-type FilterMenu = "network" | "loan" | "collateral" | "advanced" | null;
+/**
+ * The two filters that have something to choose between. Every market here is
+ * on Robinhood Chain and lends USDG, so there is no network or loan filter: a
+ * menu with one choice in it filters nothing.
+ */
+type FilterMenu = "collateral" | "advanced" | null;
+type Collateral = "all" | "blue-chip" | "meme";
 type FilterRanges = DirectoryRanges;
 type Row = DirectoryRow<CollateralPool>;
 
@@ -26,6 +32,12 @@ const RANGE_ROWS = [
   ["Available to borrow", "availableMin", "availableMax", "USDG"],
   ["6H rate", "rateMin", "rateMax", "%"],
 ] as const;
+
+const COLLATERAL_OPTIONS = [
+  ["all", "All collateral"],
+  ["blue-chip", "Blue chip"],
+  ["meme", "Meme"],
+] as const satisfies readonly [Collateral, string][];
 
 const POOL_IDS = COLLATERAL_POOLS.map((pool) => pool.poolId);
 
@@ -42,28 +54,18 @@ function Cell({ pending, children }: { pending: boolean; children: string }) {
   return <span className={cn(children === NO_FIGURE && "text-steel-500", pending && children === NO_FIGURE && "animate-pulse")}>{children}</span>;
 }
 
-function FilterPanel({ menu, onClose, setNetwork, setLoan, setCollateral, ranges, setRanges, reset }: {
+function FilterPanel({ menu, onClose, setCollateral, ranges, setRanges, reset }: {
   menu: Exclude<FilterMenu, null>;
   onClose: () => void;
-  setNetwork: (value: "robinhood") => void;
-  setLoan: (value: "USDG") => void;
-  setCollateral: (value: "all" | "blue-chip" | "meme") => void;
+  setCollateral: (value: Collateral) => void;
   ranges: FilterRanges;
   setRanges: (value: FilterRanges) => void;
   reset: () => void;
 }) {
   if (menu === "advanced") {
     return (
-      <div className="absolute left-0 top-10 z-30 flex max-h-[min(70vh,540px)] w-[min(100vw-2rem,372px)] flex-col overflow-hidden rounded-2xl border border-border bg-[#292a2c] shadow-2xl sm:left-auto sm:right-0">
+      <div className="absolute left-0 top-10 z-30 flex max-h-[min(70vh,540px)] w-[min(100vw-4.5rem,372px)] flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl">
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-          {/* Label and control share a row here; the other sections stack. */}
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-[13px] font-medium text-foreground">Trusted by</p>
-            <button type="button" className="focus-ring flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-foreground hover:bg-white/[0.07]">
-              <SlidersHorizontal className="size-3.5 text-steel-400" /> All
-            </button>
-          </div>
-
           {RANGE_ROWS.map(([label, minKey, maxKey, suffix]) => (
             <div key={label}>
               <p className="text-[13px] font-medium text-foreground">{label}</p>
@@ -114,36 +116,19 @@ function FilterPanel({ menu, onClose, setNetwork, setLoan, setCollateral, ranges
     );
   }
 
-  const options: readonly [string, string, boolean][] = menu === "network"
-    ? [["robinhood", "Robinhood", true], ["arbitrum", "Arbitrum", false]]
-    : menu === "loan"
-      ? [["USDG", "USDG", true], ["USDC", "USDC", false], ["USDT", "USDT", false]]
-      : [["all", "All collateral", true], ["blue-chip", "Blue chip", true], ["meme", "Meme", true]];
-
   return (
-    <div className="absolute left-0 top-10 z-30 min-w-52 overflow-hidden rounded-xl border border-border bg-[#292a2c] p-1.5 shadow-2xl">
-      {options.map(([value, label, enabled]) => (
+    <div className="absolute left-0 top-10 z-30 min-w-52 overflow-hidden rounded-xl border border-border bg-popover p-1.5 shadow-2xl">
+      {COLLATERAL_OPTIONS.map(([value, label]) => (
         <button
           key={value}
           type="button"
-          disabled={!enabled}
           onClick={() => {
-            if (menu === "network" && value === "robinhood") setNetwork("robinhood");
-            if (menu === "loan" && value === "USDG") setLoan("USDG");
-            if (menu === "collateral") setCollateral(value as "all" | "blue-chip" | "meme");
-            if (enabled) onClose();
+            setCollateral(value);
+            onClose();
           }}
-          className="flex w-full items-center justify-between gap-4 rounded-lg px-2.5 py-2 text-left text-[12.5px] text-foreground transition-colors hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:text-steel-600"
+          className="flex w-full items-center rounded-lg px-2.5 py-2 text-left text-[12.5px] text-foreground transition-colors hover:bg-white/[0.07]"
         >
-          <span className="flex items-center gap-2">
-            {menu === "network"
-              ? <AssetMark asset={value as "robinhood" | "arbitrum"} size={18} />
-              : menu === "loan"
-                ? <AssetMark asset={value as "USDG" | "USDC" | "USDT"} size={18} />
-                : null}
-            {label}
-          </span>
-          {!enabled && <span className="text-[10px] uppercase tracking-wide text-steel-600">Coming soon</span>}
+          {label}
         </button>
       ))}
     </div>
@@ -160,9 +145,7 @@ export function MarketDirectory() {
   // own value back.
   const openMenuRef = useRef<FilterMenu>(null);
   const [expanded, setExpanded] = useState(false);
-  const [network, setNetwork] = useState<"robinhood">("robinhood");
-  const [loan, setLoan] = useState<"USDG">("USDG");
-  const [collateral, setCollateral] = useState<"all" | "blue-chip" | "meme">("all");
+  const [collateral, setCollateral] = useState<Collateral>("all");
   const [ranges, setRanges] = useState<FilterRanges>(NO_RANGES);
 
   // Which pools there are is the app's list; the backend gives each its figures. A pool the
@@ -187,13 +170,11 @@ export function MarketDirectory() {
     const { pool } = row;
     const matchesQuery = `${pool.pair} ${pool.tier} ${pool.trustedBy}`.toLowerCase().includes(query.toLowerCase());
     const matchesCollateral = collateral === "all" || pool.tier === collateral;
-    return matchesQuery && matchesCollateral && pool.network === network && loan === "USDG" && inRanges(row, ranges);
-  }), [collateral, loan, network, query, ranges, rows]);
+    return matchesQuery && matchesCollateral && inRanges(row, ranges);
+  }), [collateral, query, ranges, rows]);
 
   const resetFilters = () => {
     setQuery("");
-    setNetwork("robinhood");
-    setLoan("USDG");
     setCollateral("all");
     setRanges(NO_RANGES);
   };
@@ -233,14 +214,22 @@ export function MarketDirectory() {
   }, [expanded]);
 
   return (
-    <div className={cn("border border-border bg-[#0b0c0e] shadow-[0_20px_60px_rgba(0,0,0,0.18)]", expanded ? "fixed inset-0 z-[100] overflow-auto rounded-none" : "rounded-[22px]")}>
+    <div className={cn("surface", expanded && "fixed inset-0 z-[100] overflow-auto rounded-none")}>
       <div className="relative flex flex-wrap items-center gap-2 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
-        <div ref={filtersRef} className="flex flex-wrap items-center gap-1">
-          {(["network", "loan", "collateral", "advanced"] as const).map((menu) => <div key={menu} className="relative"><button type="button" onClick={() => setOpenMenu((current) => current === menu ? null : menu)} className={cn(buttonClasses({ variant: "ghost", size: "sm" }), "h-8 gap-1.5 px-2.5 text-[12.5px]", openMenu === menu && "bg-white/[0.07] text-foreground")}>{menu === "network" ? <AssetMark asset={network} size={16} /> : menu === "loan" ? <AssetMark asset={loan} size={16} /> : <SlidersHorizontal className="size-3.5" />}{menu === "network" ? network === "robinhood" ? "Robinhood" : network : menu === "loan" ? loan : menu === "collateral" ? collateral === "all" ? "Collateral" : collateral === "blue-chip" ? "Blue chip" : "Meme" : "Advanced"}</button>{openMenu === menu && <FilterPanel menu={menu} onClose={() => setOpenMenu(null)} setNetwork={setNetwork} setLoan={setLoan} setCollateral={setCollateral} ranges={ranges} setRanges={setRanges} reset={resetFilters} />}</div>)}
+        {/* Both menus hang from the bar's left edge, where there is room for the wide one at any width. */}
+        <div ref={filtersRef} className="relative flex flex-wrap items-center gap-1">
+          {(["collateral", "advanced"] as const).map((menu) => (
+            <div key={menu}>
+              <button type="button" onClick={() => setOpenMenu((current) => current === menu ? null : menu)} className={cn(buttonClasses({ variant: "ghost", size: "sm" }), "h-8 gap-1.5 px-2.5 text-[12.5px]", openMenu === menu && "bg-white/[0.07] text-foreground")}>
+                <SlidersHorizontal className="size-3.5" />
+                {menu === "advanced" ? "Advanced" : collateral === "all" ? "Collateral" : COLLATERAL_OPTIONS.find(([value]) => value === collateral)![1]}
+              </button>
+              {openMenu === menu && <FilterPanel menu={menu} onClose={() => setOpenMenu(null)} setCollateral={setCollateral} ranges={ranges} setRanges={setRanges} reset={resetFilters} />}
+            </div>
+          ))}
         </div>
         <div className="ml-auto flex items-center gap-2">
           <label className="relative hidden sm:block"><span className="sr-only">Filter markets</span><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-steel-500" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter markets" className="focus-ring h-9 w-44 rounded-full border border-transparent bg-white/[0.1] pl-9 pr-3 text-[13px] text-foreground outline-none placeholder:text-steel-500 focus:border-brand-400/50" /></label>
-          <button type="button" aria-label="Market settings" className="focus-ring rounded-lg p-2 text-steel-400 transition-colors hover:bg-white/[0.06] hover:text-foreground"><Settings2 className="size-4" /></button>
           <button type="button" aria-label={expanded ? "Exit expanded market table" : "Expand market table"} onClick={() => setExpanded((value) => !value)} className="focus-ring rounded-lg p-2 text-steel-400 transition-colors hover:bg-white/[0.06] hover:text-foreground">{expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}</button>
         </div>
         <label className="relative block w-full sm:hidden"><span className="sr-only">Filter markets</span><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-steel-500" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter markets" className="focus-ring h-10 w-full rounded-lg border border-border bg-white/[0.04] pl-9 pr-3 text-[13px] text-foreground outline-none placeholder:text-steel-500 focus:border-brand-400/50" /></label>
@@ -248,10 +237,10 @@ export function MarketDirectory() {
 
       <FiguresNotice figures={[blueChip, meme, ...figures]} className="border-b border-border px-4 py-3 sm:px-6" />
 
-      <div className={cn(!expanded && "overflow-hidden rounded-b-[22px]")}>
+      <div className={cn(!expanded && "overflow-hidden rounded-b-xl")}>
       <div className="hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[1020px] border-collapse text-left">
-          <thead><tr className="border-b border-border bg-white/[0.015] text-steel-400"><th className="px-6 py-4 text-[13px] font-medium">Network</th><th className="px-5 py-4 text-[13px] font-medium">Loan</th><th className="px-5 py-4 text-[13px] font-medium">Collateral</th><th className="px-5 py-4 text-right text-[13px] font-medium">LLTV</th><th className="px-5 py-4 text-[13px] font-medium">Trusted by</th><th className="px-5 py-4 text-right text-[13px] font-medium">Total borrow</th><th className="px-5 py-4 text-right text-[13px] font-medium">Available to borrow</th><th className="px-6 py-4 text-right text-[13px] font-medium">Borrow APR</th></tr></thead>
+        <table className="w-full min-w-[900px] border-collapse text-left">
+          <thead><tr className="border-b border-border bg-white/[0.015] text-steel-400"><th className="px-6 py-4 text-[13px] font-medium">Loan</th><th className="px-5 py-4 text-[13px] font-medium">Collateral</th><th className="px-5 py-4 text-right text-[13px] font-medium">LLTV</th><th className="px-5 py-4 text-[13px] font-medium">Trusted by</th><th className="px-5 py-4 text-right text-[13px] font-medium">Total borrow</th><th className="px-5 py-4 text-right text-[13px] font-medium">Available to borrow</th><th className="px-6 py-4 text-right text-[13px] font-medium">Borrow APR</th></tr></thead>
           <tbody>
             {filteredRows.map((row: Row) => {
               const { pool } = row;
@@ -259,8 +248,7 @@ export function MarketDirectory() {
               const href = poolHref(pool);
               return (
                 <tr key={pool.poolId} onClick={() => router.push(href)} className="group cursor-pointer border-b border-border/70 text-[14px] transition-colors last:border-b-0 hover:bg-white/[0.035]">
-                  <td className="px-6 py-5"><AssetMark asset={pool.network} label /></td>
-                  <td className="px-5 py-5"><span className="flex items-center gap-2"><AssetMark asset="USDG" size={20} /><span className="font-semibold text-foreground">USDG</span></span></td>
+                  <td className="px-6 py-5"><span className="flex items-center gap-2"><AssetMark asset="USDG" size={20} /><span className="font-semibold text-foreground">USDG</span></span></td>
                   <td className="px-5 py-5">
                     <div className="flex items-center gap-2.5">
                       <AssetPair pair={pool.pair} size={24} hint="Uniswap v4 LP" />
@@ -275,9 +263,10 @@ export function MarketDirectory() {
                   <td className="px-5 py-5"><Badge tone={pool.tier === "meme" ? "warn" : "neutral"}>{pool.trustedBy}</Badge></td>
                   <td className="tnum px-5 py-5 text-right text-foreground"><Cell pending={pending}>{orDash(row.debtUsdg, fmtCompactUsdg)}</Cell></td>
                   <td className="tnum px-5 py-5 text-right text-foreground"><Cell pending={pending}>{orDash(row.availableToBorrowUsdg, fmtCompactUsdg)}</Cell></td>
-                  <td className="tnum px-6 py-5 text-right font-medium text-foreground">
-                    <div><Cell pending={pending}>{orDash(row.borrowAprPct, fmtPct)}</Cell></div>
-                    <span className="mt-2 inline-flex items-center gap-1 text-[11px] text-brand-300 opacity-0 transition-opacity group-hover:opacity-100">Open <ArrowUpRight className="size-3" /></span>
+                  <td className="tnum relative px-6 py-5 text-right font-medium text-foreground">
+                    <Cell pending={pending}>{orDash(row.borrowAprPct, fmtPct)}</Cell>
+                    {/* Out of the flow, so the figure sits on the same line as the rest of its row. */}
+                    <span className="pointer-events-none absolute bottom-1 right-6 inline-flex items-center gap-1 text-[11px] text-brand-300 opacity-0 transition-opacity group-hover:opacity-100">Open <ArrowUpRight className="size-3" /></span>
                   </td>
                 </tr>
               );

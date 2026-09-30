@@ -3,14 +3,10 @@ import Link from "next/link";
 
 import { ExampleLoanCard } from "@/components/landing/example-loan-card";
 import { buttonClasses } from "@/components/ui/button";
-import { VortexGlow } from "@/components/ui/logo";
 
 export function Hero() {
   return (
     <section className="relative flex flex-1 items-center overflow-hidden">
-      <VortexGlow size={900} opacity={0.4} blur={80} className="-right-64 -top-80 hidden lg:block" />
-      <VortexGlow size={560} opacity={0.22} blur={64} className="-right-64 -top-56 lg:hidden" />
-
       <div className="relative mx-auto grid w-full max-w-6xl items-center gap-14 px-5 py-12 sm:px-8 sm:py-16 lg:grid-cols-[1.1fr_auto]">
         <div>
           <h1
@@ -19,7 +15,7 @@ export function Hero() {
           >
             <span className="text-foreground">Borrow against your liquidity</span>
             <br />
-            <span className="text-brand-gradient">without unwinding it.</span>
+            <span className="text-brand-300">without unwinding it.</span>
           </h1>
 
           <p

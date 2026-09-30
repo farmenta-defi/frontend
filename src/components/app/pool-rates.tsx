@@ -113,7 +113,8 @@ export function PoolRates({ pool }: { pool: CollateralPool }) {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border/70 bg-white/[0.03] p-5">
+      {/* A column of the same card, not a card inside it: a rule is all that parts it from the chart. */}
+      <div className="border-t border-border/70 pt-5 md:border-l md:border-t-0 md:pl-6 md:pt-0">
         <h3 className="text-[15px] font-semibold text-foreground">Rate breakdown</h3>
         <dl className="mt-3">
           <div className="flex items-center justify-between gap-4 border-b border-border/70 pb-3 pt-1">
