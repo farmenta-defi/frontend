@@ -1,14 +1,15 @@
-import type { Hex } from "viem";
+import type { Address, Hex } from "viem";
 
 import type { MarketTier } from "@/lib/risk-params";
 
+import { activityPageOf, type ActivityPage } from "./activity";
 import { listedPoolOf, marketOf, poolOf, type HistoryRange, type ListedPool, type MarketFigures, type PoolFigures } from "./figures";
-import { readListedPools, readMarkets, readPool } from "./wire";
+import { readActivity, readListedPools, readMarkets, readPool } from "./wire";
 
 /**
  * The backend, as the app asks it (FAR-80): the markets, the pools of one
- * market, and one pool. What comes back is already in the units a page
- * shows; a component never converts.
+ * market, one pool, and a wallet's history (FAR-71). What comes back is
+ * already in the units a page shows; a component never converts.
  *
  * These are figures to show. Nothing a transaction is sized from comes from
  * here: that is read from the chain (`@/lib/onchain`), so the actions keep
@@ -129,6 +130,29 @@ export function fetchPool(poolId: Hex, range: HistoryRange = "1w", options: Requ
   );
 }
 
+/** How many rows of a wallet's history are asked for at once. The backend takes 1 to 100. */
+export const ACTIVITY_PAGE_SIZE = 25;
+
+/**
+ * One page of a wallet's history, newest first: the first page, or the one
+ * after `cursor`, which is the `next` of the page before.
+ */
+export function fetchActivity(
+  account: Address,
+  cursor: string | null = null,
+  options: RequestOptions = {},
+): Promise<ActivityPage> {
+  const after = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+  return get(
+    `/activity/${account}?limit=${ACTIVITY_PAGE_SIZE}${after}`,
+    (body) => {
+      const activity = readActivity(body);
+      return activity ? activityPageOf(activity) : null;
+    },
+    options,
+  );
+}
+
 /** What a page says when the figures did not come. One sentence per reason, and what still works. */
 export function failureMessage(error: unknown): string {
   const kind = error instanceof BackendError ? error.kind : "unreachable";
@@ -144,5 +168,26 @@ export function failureMessage(error: unknown): string {
       return `The market data service answered in a form this app does not read, so the figures are not shown. ${onchain}`;
     case "unreachable":
       return `The market data service did not answer, so the figures are not shown. ${onchain}`;
+  }
+}
+
+/**
+ * What the Activity tab says when a wallet's history did not come. The
+ * history is the backend's copy of the chain's logs: the transactions are on
+ * the chain whether or not the copy can be read.
+ */
+export function historyFailureMessage(error: unknown): string {
+  const kind = error instanceof BackendError ? error.kind : "unreachable";
+  const onchain = "Your transactions are on the chain, and the block explorer lists them.";
+  switch (kind) {
+    case "not-configured":
+      return `This build has no market data service configured, so there is no history to show. ${onchain}`;
+    case "unavailable":
+      return `The market data service is catching up with the chain, so your history is not shown. ${onchain}`;
+    case "not-found":
+    case "invalid":
+      return `The market data service answered in a form this app does not read, so your history is not shown. ${onchain}`;
+    case "unreachable":
+      return `The market data service did not answer, so your history is not shown. ${onchain}`;
   }
 }

@@ -1,0 +1,5 @@
+{
+  "message": "cursor must be blockNumber:logIndex",
+  "error": "Bad Request",
+  "statusCode": 400
+}

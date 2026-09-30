@@ -19,6 +19,22 @@ fails when the app stops understanding what the backend really sends.
 Nothing had been supplied or borrowed when they were recorded, so every amount and every rate
 in them is zero. That is the state the app has to show as zero, not as a failure.
 
+The answers of `GET /activity/:address` were recorded from the live backend on 30 Sep 2026 at
+05:27 UTC, and only re-indented:
+
+| File | Request | Status |
+|---|---|---|
+| `activity-page-1.json` | `GET /activity/0x16a5…0b12?limit=2` | 200 |
+| `activity-page-2.json` | `GET /activity/0x16a5…0b12?limit=2&cursor=76256084:21` | 200 |
+| `activity-none.json` | `GET /activity/0x0000…dEaD?limit=25`, a wallet with no transactions | 200 |
+| `activity-address-refused.json` | `GET /activity/nope` | 400 |
+| `activity-cursor-refused.json` | `GET /activity/0x16a5…0b12?cursor=nope` | 400 |
+
+The wallet had supplied twice and withdrawn once, which was every transaction in either market
+at the time. Nobody had deposited collateral, borrowed or been liquidated, so there is no
+recorded row of those kinds: the tests build them from the fields the backend's query selects
+and say so.
+
 To record them again:
 
 ```sh

@@ -1,6 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { apiUrl, BackendError, failureMessage, fetchListedPools, fetchMarkets, fetchPool } from "./client";
+import type { ActivityRow } from "./activity";
+import {
+  ACTIVITY_PAGE_SIZE,
+  apiUrl,
+  BackendError,
+  failureMessage,
+  fetchActivity,
+  fetchListedPools,
+  fetchMarkets,
+  fetchPool,
+  historyFailureMessage,
+} from "./client";
+import activityAddressRefused from "./fixtures/activity-address-refused.json";
+import activityCursorRefused from "./fixtures/activity-cursor-refused.json";
+import activityNone from "./fixtures/activity-none.json";
+import activityPageOne from "./fixtures/activity-page-1.json";
+import activityPageTwo from "./fixtures/activity-page-2.json";
 import markets from "./fixtures/markets.json";
 import poolEthUsdg from "./fixtures/pool-eth-usdg.json";
 import poolNotListed from "./fixtures/pool-not-listed.json";
@@ -11,6 +27,7 @@ import tierNotConfigured from "./fixtures/tier-not-configured.json";
 const BASE = "https://api.example";
 const ETH_USDG = "0xbac3aa3b91584a53a579b3c999a56756e954e59247e497bad1d25a4334bde551";
 const OLD_ETH_USDG = "0x54f7883914619af9105355bf83ed678bcf9f63560218ac61c9963b9503d0ba32";
+const WALLET = "0x16a59f35ef7e61058e729c02c38c3b0406390b12";
 
 /** A backend that answers every request with one recorded body. */
 function answering(body: unknown, status = 200) {
@@ -183,6 +200,206 @@ describe("failureMessage", () => {
     it("says that the on-chain actions still work, whatever failed", () => {
       for (const error of [new BackendError("unavailable", "", 503), new TypeError("fetch failed"), undefined]) {
         expect(failureMessage(error)).toMatch(/still work/);
+      }
+    });
+  });
+});
+
+/**
+ * A backend that pages a history the way the live one does (`backend`
+ * `fab3c76`, `src/activity/activity.service.ts`): newest first by block and
+ * log, the rows after the cursor `blockNumber:logIndex`, one row more than
+ * asked for read to know whether there is a next page, and the cursor of the
+ * last row sent on every page. The rows are the recorded one, moved along
+ * the chain.
+ */
+function paging(count: number) {
+  const [recorded] = activityPageOne.items;
+  // Three logs to a block, so a page ends in the middle of one.
+  const log = (index: number) => ({
+    ...recorded,
+    blockNumber: String(76_000_000 + Math.floor(index / 3)),
+    logIndex: index % 3,
+    transactionHash: `0x${index.toString(16).padStart(64, "0")}`,
+  });
+  const history = Array.from({ length: count }, (_, index) => log(index)).reverse();
+  const requests: string[] = [];
+
+  const fetch = vi.fn(async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    requests.push(`${url.pathname}${url.search}`);
+    const limit = Number(url.searchParams.get("limit"));
+    const [block, index] = (url.searchParams.get("cursor") ?? "").split(":");
+    const after = url.searchParams.has("cursor")
+      ? history.filter(
+          (row) =>
+            BigInt(row.blockNumber) < BigInt(block) ||
+            (row.blockNumber === block && row.logIndex < Number(index)),
+        )
+      : history;
+    const items = after.slice(0, limit);
+    const last = items.at(-1);
+    const body = {
+      items,
+      nextCursor: last ? `${last.blockNumber}:${last.logIndex}` : null,
+      hasMore: after.length > limit,
+    };
+    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof globalThis.fetch;
+
+  return {
+    fetch,
+    requests,
+    /** A transaction the wallet sends while its history is being read. */
+    arrive: () => history.unshift(log(history.length)),
+    ids: () => history.map((row) => `${row.blockNumber}:${row.logIndex}`),
+  };
+}
+
+/** Every page, from the first to the one with no next, as the Activity tab asks for them. */
+async function readToTheEnd(fetch: typeof globalThis.fetch, between: () => void = () => {}) {
+  const rows: ActivityRow[] = [];
+  let cursor: string | null = null;
+  let pages = 0;
+  do {
+    const page = await fetchActivity(WALLET, cursor, { baseUrl: BASE, fetch });
+    rows.push(...page.rows);
+    cursor = page.next;
+    pages += 1;
+    between();
+  } while (cursor !== null && pages < 50);
+  return { rows, pages };
+}
+
+describe("a wallet's history", () => {
+  describe("positive", () => {
+    it("asks for the first page of a wallet's history and reads the recorded answer", async () => {
+      const { fetch, requests } = answering(activityPageOne);
+
+      const page = await fetchActivity(WALLET, null, { baseUrl: BASE, fetch });
+
+      expect(requests).toEqual([`${BASE}/activity/${WALLET}?limit=${ACTIVITY_PAGE_SIZE}`]);
+      expect(page.rows.map((row) => [row.kind, row.amountUsdg])).toEqual([
+        ["withdraw", 0.03],
+        ["supply", 0.100613],
+      ]);
+    });
+
+    it("asks for the page after a cursor with the cursor the page before gave", async () => {
+      const first = await fetchActivity(WALLET, null, { baseUrl: BASE, fetch: answering(activityPageOne).fetch });
+      const { fetch, requests } = answering(activityPageTwo);
+
+      const second = await fetchActivity(WALLET, first.next, { baseUrl: BASE, fetch });
+
+      expect(first.next).toBe("76256084:21");
+      expect(requests).toEqual([`${BASE}/activity/${WALLET}?limit=${ACTIVITY_PAGE_SIZE}&cursor=76256084%3A21`]);
+      expect(second.rows.map((row) => row.id)).toEqual(["76253701:9"]);
+      expect(second.next).toBeNull();
+    });
+
+    it("reads a history of many pages to its end, every row once and in order", async () => {
+      const backend = paging(3 * ACTIVITY_PAGE_SIZE + 7);
+
+      const { rows, pages } = await readToTheEnd(backend.fetch);
+
+      expect(pages).toBe(4);
+      expect(backend.requests).toHaveLength(4);
+      expect(rows.map((row) => row.id)).toEqual(backend.ids());
+      expect(new Set(rows.map((row) => row.id)).size).toBe(3 * ACTIVITY_PAGE_SIZE + 7);
+    });
+  });
+
+  describe("negative", () => {
+    it("reports a refused address and a refused cursor as answers the app cannot use, as recorded", async () => {
+      for (const refused of [activityAddressRefused, activityCursorRefused]) {
+        const { fetch } = answering(refused, 400);
+
+        expect(await failure(fetchActivity(WALLET, "nope", { baseUrl: BASE, fetch }))).toMatchObject({
+          kind: "invalid",
+          status: 400,
+        });
+      }
+    });
+
+    it("reports a backend whose indexer is behind, which is how it answers then", async () => {
+      // Not recorded: the indexer was three seconds behind the chain when the answers were taken.
+      const { fetch } = answering({ statusCode: 503, message: "Indexer is unavailable" }, 503);
+
+      expect(await failure(fetchActivity(WALLET, null, { baseUrl: BASE, fetch }))).toMatchObject({
+        kind: "unavailable",
+        status: 503,
+      });
+    });
+
+    it("reports an answer in another shape instead of listing it", async () => {
+      for (const body of [markets, { items: [] }, { ...activityPageOne, hasMore: "yes" }, { ...activityPageOne, items: [{}] }]) {
+        const { fetch } = answering(body);
+
+        expect(await failure(fetchActivity(WALLET, null, { baseUrl: BASE, fetch }))).toMatchObject({ kind: "invalid" });
+      }
+    });
+  });
+
+  describe("edge case", () => {
+    it("reads the recorded answer for a wallet with no transactions as a last, empty page", async () => {
+      const { fetch } = answering(activityNone);
+
+      expect(await fetchActivity(WALLET, null, { baseUrl: BASE, fetch })).toEqual({ rows: [], next: null });
+    });
+
+    it("stops at a history that ends exactly on a page, without asking for an empty one", async () => {
+      const backend = paging(2 * ACTIVITY_PAGE_SIZE);
+
+      const { rows, pages } = await readToTheEnd(backend.fetch);
+
+      expect(pages).toBe(2);
+      expect(rows).toHaveLength(2 * ACTIVITY_PAGE_SIZE);
+    });
+
+    it("loses no row and repeats none when the wallet sends a transaction between two pages", async () => {
+      const backend = paging(2 * ACTIVITY_PAGE_SIZE + 5);
+      const before = backend.ids();
+
+      const { rows } = await readToTheEnd(backend.fetch, backend.arrive);
+
+      // The rows that were there when the reading began, all of them, once. The new ones come with the next refresh.
+      expect(rows.map((row) => row.id)).toEqual(before);
+    });
+
+    it("asks nothing when the build was given no backend", async () => {
+      vi.stubEnv("NEXT_PUBLIC_API_URL", "");
+      const { fetch, requests } = answering(activityPageOne);
+
+      expect((await failure(fetchActivity(WALLET, null, { fetch }))).kind).toBe("not-configured");
+      expect(requests).toEqual([]);
+    });
+  });
+});
+
+describe("historyFailureMessage", () => {
+  const KINDS = ["not-configured", "unreachable", "unavailable", "not-found", "invalid"] as const;
+
+  describe("positive", () => {
+    it("says why there is no history", () => {
+      expect(historyFailureMessage(new BackendError("unavailable", "", 503))).toMatch(/catching up with the chain/);
+      expect(historyFailureMessage(new BackendError("unreachable", ""))).toMatch(/did not answer/);
+      expect(historyFailureMessage(new BackendError("not-configured", ""))).toMatch(/no market data service configured/);
+      expect(historyFailureMessage(new BackendError("invalid", "", 400))).toMatch(/a form this app does not read/);
+    });
+  });
+
+  describe("negative", () => {
+    it("never says that the wallet has no transactions", () => {
+      for (const kind of KINDS) {
+        expect(historyFailureMessage(new BackendError(kind, kind))).not.toMatch(/no transactions/i);
+      }
+    });
+  });
+
+  describe("edge case", () => {
+    it("says that the transactions are on the chain, whatever failed", () => {
+      for (const error of [...KINDS.map((kind) => new BackendError(kind, kind)), new TypeError("fetch failed"), undefined]) {
+        expect(historyFailureMessage(error)).toMatch(/on the chain, and the block explorer lists them/);
       }
     });
   });

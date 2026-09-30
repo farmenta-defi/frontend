@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "market": "0x1f69d27f1ac7415a4252957951900130cb885484",
+      "blockNumber": "76256790",
+      "logIndex": 2,
+      "timestamp": "1790745230",
+      "transactionHash": "0xb7f76dc6b428d43aa6af192daf1d99940af13f33991d38d6551cdfdadcf1fad7",
+      "kind": "withdraw",
+      "assetsUsdg": "30000",
+      "shares": "30000000",
+      "category": "vault"
+    },
+    {
+      "market": "0x1f69d27f1ac7415a4252957951900130cb885484",
+      "blockNumber": "76256084",
+      "logIndex": 21,
+      "timestamp": "1790745159",
+      "transactionHash": "0x4552664816ea9d118349dc69c23c8fa0fbd2496b900ea654905a4c45290b7eb0",
+      "kind": "deposit",
+      "assetsUsdg": "100613",
+      "shares": "100613000",
+      "category": "vault"
+    }
+  ],
+  "nextCursor": "76256084:21",
+  "hasMore": true
+}

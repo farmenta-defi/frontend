@@ -1,0 +1,5 @@
+{
+  "message": "address must be a non-zero address",
+  "error": "Bad Request",
+  "statusCode": 400
+}
