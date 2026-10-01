@@ -2,7 +2,7 @@ import { isAddress, zeroAddress } from "viem";
 import { describe, expect, it } from "vitest";
 
 import * as fork from "../../scripts/fork.mjs";
-import { COLLATERAL_POOLS, findPool, MARKETS, poolById, poolHref, USDG, type CollateralPool } from "./markets";
+import { CLOSED_MARKETS, closureOf, COLLATERAL_POOLS, findPool, MARKETS, poolById, poolHref, USDG, type CollateralPool } from "./markets";
 import { poolIdOf, type PoolKey } from "./onchain/contracts";
 
 /**
@@ -249,6 +249,39 @@ describe("the fork", () => {
     it("has every pool's id as the hash of the key it lists it under", () => {
       for (const listed of fork.LISTED_POOLS) {
         expect(poolIdOf(listed.key as PoolKey), listed.id).toBe(listed.id);
+      }
+    });
+  });
+});
+
+describe("the markets the app holds closed", () => {
+  describe("positive", () => {
+    it("the Meme market is closed, with a label for a badge and a notice that says what is open", () => {
+      const closure = closureOf("meme");
+
+      expect(closure).not.toBeNull();
+      expect(closure!.label).toBe("Temporarily closed");
+      expect(closure!.notice).toMatch(/Meme market is temporarily closed/);
+      expect(closure!.notice).toMatch(/Blue chip pools are open/);
+    });
+  });
+
+  describe("negative", () => {
+    it("the Blue chip market is open", () => {
+      expect(closureOf("blue-chip")).toBeNull();
+    });
+  });
+
+  describe("edge case", () => {
+    it("closes only markets there are, and leaves at least one open", () => {
+      const tiers = MARKETS.map((market) => market.id);
+      for (const tier of Object.keys(CLOSED_MARKETS)) expect(tiers).toContain(tier);
+      expect(tiers.some((tier) => closureOf(tier) === null)).toBe(true);
+    });
+
+    it("says so without an em dash, as every sentence of the app does", () => {
+      for (const closure of Object.values(CLOSED_MARKETS)) {
+        expect(`${closure.label} ${closure.notice}`).not.toContain("\u2014");
       }
     });
   });

@@ -30,6 +30,16 @@ const PAUSED = (stopped: string) =>
 type Amount = bigint | null;
 const missing = (amount: Amount): amount is null | 0n => amount === null || amount <= 0n;
 
+/**
+ * The gate of an action that brings funds into a market (supplying, depositing collateral,
+ * borrowing), under the app's own switch for a market it holds closed (`CLOSED_MARKETS` in
+ * `lib/markets`). A closed market refuses before anything else is looked at. The gates of what
+ * takes funds out are not passed through here.
+ */
+export function entryGate(closure: { notice: string } | null, gate: Gate): Gate {
+  return closure ? refuse("MarketClosed", closure.notice) : gate;
+}
+
 export function supplyGate(state: LenderState, assets: Amount): Gate {
   if (state.paused) return PAUSED("supplying");
   if (missing(assets)) return NO_AMOUNT;

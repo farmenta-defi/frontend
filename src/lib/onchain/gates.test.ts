@@ -2,6 +2,7 @@ import { maxUint256, zeroAddress } from "viem";
 import { describe, expect, it } from "vitest";
 
 import {
+  entryGate,
   borrowGate,
   depositCollateralGate,
   repayGate,
@@ -84,6 +85,39 @@ describe("lender gates", () => {
     it("says the rest is lent out when idle cash, not the deposit, is the limit", () => {
       const gate = withdrawGate(lender({ maxWithdraw: 50n * USDG }), 60n * USDG);
       expect(gate.ok === false && gate.message).toMatch(/up to 50 USDG.*your 200 USDG is lent out/);
+    });
+  });
+});
+
+describe("entryGate, the app's switch for a market it holds closed", () => {
+  const closure = { notice: "The Meme market is temporarily closed." };
+
+  describe("positive", () => {
+    it("leaves a gate as it is in a market that is not closed", () => {
+      expect(entryGate(null, supplyGate(lender(), 100n * USDG))).toEqual({ ok: true });
+      expect(code(entryGate(null, supplyGate(lender(), 501n * USDG)))).toBe("InsufficientBalance");
+    });
+  });
+
+  describe("negative", () => {
+    it("refuses what would otherwise go through, with the closure's notice", () => {
+      const gate = entryGate(closure, supplyGate(lender(), 100n * USDG));
+
+      expect(gate).toEqual({ ok: false, code: "MarketClosed", message: closure.notice });
+      expect(code(entryGate(closure, borrowGate(collateral(), 4n * USDG)))).toBe("MarketClosed");
+      expect(code(entryGate(closure, depositCollateralGate(inWallet(), POOL)))).toBe("MarketClosed");
+    });
+  });
+
+  describe("edge case", () => {
+    it("says the market is closed before any other reason, so nobody is told to fix something that would not help", () => {
+      expect(code(entryGate(closure, supplyGate(lender(), null)))).toBe("MarketClosed");
+      expect(code(entryGate(closure, supplyGate(lender(), 501n * USDG)))).toBe("MarketClosed");
+    });
+
+    it("is not what the ways out are decided by: withdrawing and repaying keep their own gates", () => {
+      expect(withdrawGate(lender(), 100n * USDG)).toEqual({ ok: true });
+      expect(repayGate(collateral(), 50n * USDG)).toEqual({ ok: true });
     });
   });
 });

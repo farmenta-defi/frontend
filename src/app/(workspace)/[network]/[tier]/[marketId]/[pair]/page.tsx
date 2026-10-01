@@ -11,7 +11,7 @@ import { PoolRates } from "@/components/app/pool-rates";
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { Badge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
-import { COLLATERAL_POOLS, findPool, MARKETS, NETWORKS } from "@/lib/markets";
+import { closureOf, COLLATERAL_POOLS, findPool, MARKETS, NETWORKS } from "@/lib/markets";
 
 /**
  * One listed collateral pool, addressed the way the URL reads it:
@@ -61,6 +61,7 @@ export default async function MarketDetailPage({ params }: { params: Promise<Rou
 
   const market = MARKETS.find((item) => item.id === pool.tier)!;
   const chain = NETWORKS[pool.network];
+  const closure = closureOf(pool.tier);
 
   return (
     <div>
@@ -86,8 +87,17 @@ export default async function MarketDetailPage({ params }: { params: Promise<Rou
           </Badge>
           <Badge tone={pool.tier === "meme" ? "warn" : "brand"}>{market.name} market</Badge>
           <Badge tone="neutral">{pool.trustedBy}</Badge>
+          {closure && <Badge tone="neutral">{closure.label}</Badge>}
         </div>
       </header>
+
+      {/* A market the app holds closed is reachable by its address even though the directory
+          does not open it, so the page says so before anything else. */}
+      {closure && (
+        <p role="status" className="mt-6 rounded-xl border border-border bg-white/[0.03] px-4 py-3 text-[13px] leading-5 text-steel-300">
+          {closure.notice}
+        </p>
+      )}
 
       {/* Reading column and action rail. Four metrics will not sit on one line
           beside a 356px rail inside max-w-6xl, so they pair up instead of
