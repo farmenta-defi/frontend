@@ -1,64 +1,64 @@
 {
   "chainId": 4663,
-  "owner": "0x20B2d384d5a4303e10355D3a8Bff59e9940Ad5E8",
+  "owner": "0xa4fD84DFdd87e4e9f3B49a8323193fde604c21Ff",
   "guardian": "0xa6A36ae078a4f1f6A2659951Ea082cB88f16F9F2",
   "collateralPolicy": {
-    "address": "0xcC6d1eCA4577983A01849a11F4499d98bD28a2d3",
-    "startBlock": 74904488
+    "address": "0x032f7c4744B6f043F92a94C8e257c5A843D544e0",
+    "startBlock": 77197945
   },
   "twapRecorder": {
-    "address": "0x320307D8e3A1Fad3C4622141a1323B9B854404D4",
-    "startBlock": 74904480
+    "address": "0xEFC4B1A2BbF9B2D61d58e1E8543D9706f0f42484",
+    "startBlock": 77197938
   },
   "markets": {
     "blueChip": {
-      "address": "0x1f69d27F1ac7415A4252957951900130CB885484",
-      "startBlock": 74904517
+      "address": "0x89e20D2bBBbF52Bf8036bF8efd94C81C8386116B",
+      "startBlock": 77197974
     },
     "meme": {
-      "address": "0x992c879573eeF8bc948fc3f49d5e5C968204E751",
-      "startBlock": 74904522
+      "address": "0x01540c8aA1c13d50dA85406dCa012F9f41169927",
+      "startBlock": 77197979
     }
   },
   "timelock": {
-    "address": "0x20B2d384d5a4303e10355D3a8Bff59e9940Ad5E8",
-    "startBlock": 74904474
+    "address": "0xa4fD84DFdd87e4e9f3B49a8323193fde604c21Ff",
+    "startBlock": 77197932
   },
   "policyAcceptOperation": null,
   "priceOracle": {
-    "address": "0xb9D453d966f55cd6e5b4E813D75739fE0272E5Ff",
-    "startBlock": 74904493
+    "address": "0x0Bb6FEAceb66640C2AC4fB0E8562C7ea5dfe5fb5",
+    "startBlock": 77197950
   },
   "positionValuer": {
-    "address": "0xb90D1b97738Beb75befDDbF8bF0EA59AF366a0B3",
-    "startBlock": 74904498
+    "address": "0x59D3543BBF93AC2806fB5f81387858e501d90ada",
+    "startBlock": 77197955
   },
   "interestRateModel": {
-    "address": "0x008a71fDC5A2e718895e54165630049F846A80C0",
-    "startBlock": 74904504
+    "address": "0x18b94D05731F99643c4f3b24F311e753d8bEd19c",
+    "startBlock": 77197961
   },
   "marketImplementation": {
-    "address": "0xb59d1dd281D8F76592e1F83E54890BEB62CDb6E8",
-    "startBlock": 74904512
+    "address": "0xc3C3b9f22a1cFA2e6A1b546b8507a04497fBA995",
+    "startBlock": 77197969
   },
   "lenses": {
     "blueChip": {
-      "address": "0x425862c2cC794f22584aA3D9BAf0Fa497Dc89153",
-      "startBlock": 74904527
+      "address": "0x2Bc059954B712DE2c99A7DDc01c8Ed884bF70621",
+      "startBlock": 77197984
     },
     "meme": {
-      "address": "0x7147E8C771Db492162262E4F7F68b06072aDDf93",
-      "startBlock": 74904532
+      "address": "0xA8fF2adC5cdaE8e940E5e680CAd2625c7cfaD909",
+      "startBlock": 77197989
     }
   },
   "liquidatorHelpers": {
     "blueChip": {
-      "address": "0x48ecD3270110aD3D4db485C8C02154b57b2C7cC7",
-      "startBlock": 74904537
+      "address": "0x152117B7cE6361494921fc966B7Cd3A09eF85980",
+      "startBlock": 77197994
     },
     "meme": {
-      "address": "0xA82645980f78e80c6F4e0176d8602e919b165bc4",
-      "startBlock": 74904542
+      "address": "0x5ab210578cB41ef2972d0117B645c1796d738Fab",
+      "startBlock": 77197999
     }
   }
 }

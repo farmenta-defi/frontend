@@ -143,7 +143,7 @@ describe("the six pools on the fork", () => {
 
       expect(state.holdings!.amount0).toBe(0n);
       expect(amounts!.usdg).toBe(0);
-      expect(amounts!.base).toBeCloseTo(0.45305743, 6);
+      expect(amounts!.base).toBeCloseTo(1.83440126, 6);
       expect(inRange).toBe(false);
       await depositCollateral(user.clients, blueChip, POSITIONS.metaUsdgAllMeta);
       expect((await readPosition(publicClient, blueChip, POSITIONS.metaUsdgAllMeta, user.address)).place).toBe("collateral");
@@ -414,9 +414,10 @@ describe("a stock pool while its price feed is quiet", () => {
       const { user, refs } = await holder(CASES[1]);
       await depositCollateral(user.clients, refs, tokenId);
 
-      // At the fork's block USDG's price is 14 hours and 17 minutes old and META's 20 minutes.
-      // Nine hours on, the oldest of the two is 23 hours old: old, and still accepted.
-      await wait(9 * HOUR);
+      // At the fork's block USDG's price is 16 hours and 23 minutes old and META's 35 minutes,
+      // and the start of the fork adds the 35 minutes it records meme prices over. Seven hours
+      // on, the oldest of the two is just under 24 hours old: old, and still accepted.
+      await wait(7 * HOUR);
 
       const state = await readPosition(publicClient, refs, tokenId, user.address);
       expect(state.riskError).toBeNull();

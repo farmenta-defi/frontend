@@ -17,9 +17,6 @@ import { formatUnits, maxUint256, parseUnits } from "viem";
 export const USDG_DECIMALS = 6;
 export const WAD_DECIMALS = 18;
 
-/** `borrow` refuses to leave a loan owing less than this (spec §6.2, `BorrowBelowMinimum`). */
-export const MIN_DEBT_USDG = 10_000_000n;
-
 /**
  * What a user typed, as USDG base units. `null` when it is not an amount:
  * empty, not a number, or finer than the token can hold. A seventh decimal is

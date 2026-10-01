@@ -185,12 +185,11 @@ describe("borrowGate", () => {
   });
 
   describe("edge case", () => {
-    it("holds a first loan to the 10 USDG minimum, on the total and not on the amount", () => {
+    it("has no minimum loan: the smallest unit of USDG is a loan, and nothing is not", () => {
       const fresh = collateral({ debt: 0n });
-      expect(code(borrowGate(fresh, 10n * USDG - 1n))).toBe("BorrowBelowMinimum");
-      expect(borrowGate(fresh, 10n * USDG)).toEqual({ ok: true });
-      // 4 USDG more on a loan that already owes 100 is a loan of 104.
-      expect(borrowGate(collateral(), 4n * USDG)).toEqual({ ok: true });
+      expect(borrowGate(fresh, 1n)).toEqual({ ok: true });
+      expect(borrowGate(fresh, 10n * USDG - 1n)).toEqual({ ok: true });
+      expect(code(borrowGate(fresh, 0n))).toBe("NoAmount");
     });
 
     it("says of a token that does not exist that it is not collateral, not that its pool is not listed", () => {

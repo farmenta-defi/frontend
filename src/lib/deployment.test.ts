@@ -123,12 +123,16 @@ describe("tierOfMarket", () => {
       expect(tierOfMarket(null, "0x00000000000000000000000000000000000000b1")).toBeNull();
     });
 
-    it("names the market the recorded history is from, in the mainnet manifest", () => {
+    it("names the two markets of the mainnet manifest, and not the market of the deployment it replaced", () => {
       const mainnet = parseDeployment(
         JSON.parse(readFileSync(join(__dirname, "../../deployments/mainnet.json"), "utf8")),
       );
 
-      expect(tierOfMarket(mainnet, "0x1f69d27f1ac7415a4252957951900130cb885484")).toBe("blue-chip");
+      expect(tierOfMarket(mainnet, "0x89e20d2bbbbf52bf8036bf8efd94c81c8386116b")).toBe("blue-chip");
+      expect(tierOfMarket(mainnet, "0x01540c8aa1c13d50da85406dca012f9f41169927")).toBe("meme");
+      // The Blue-chip market of the 28 Sep 2026 deployment, which the recorded answers in
+      // src/lib/backend/fixtures still carry. The app has no page for it any more.
+      expect(tierOfMarket(mainnet, "0x1f69d27f1ac7415a4252957951900130cb885484")).toBeNull();
     });
   });
 });

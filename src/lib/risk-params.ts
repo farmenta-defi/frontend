@@ -43,7 +43,6 @@ export type RiskParams = {
   closeFactor: string;
   poolDebtCap: string;
   marketDebtCapUsd: number; // initial
-  minDebtUsd: number;
   minPositionUsd: number;
   spotRuleAtBorrow: string;
   feeCapPctOfPrincipal: number; // uncollected fees counted for borrow
@@ -66,8 +65,7 @@ export const RISK_PARAMS: Record<MarketTier, RiskParams> = {
     closeFactor: "50%, or 100% if HF < 0.9 or debt < $100",
     poolDebtCap: "≤ 10% of pool TVL",
     marketDebtCapUsd: 500_000,
-    minDebtUsd: 10,
-    minPositionUsd: 50,
+    minPositionUsd: 5,
     spotRuleAtBorrow: "spot within ±2% of oracle",
     feeCapPctOfPrincipal: 10,
     priceSource: "Chainlink",
@@ -84,8 +82,7 @@ export const RISK_PARAMS: Record<MarketTier, RiskParams> = {
     closeFactor: "100%",
     poolDebtCap: "≤ 5% of pool TVL, max $20k",
     marketDebtCapUsd: 50_000,
-    minDebtUsd: 10,
-    minPositionUsd: 50,
+    minPositionUsd: 5,
     spotRuleAtBorrow: "min(spot, 30-min TWAP)",
     feeCapPctOfPrincipal: 10,
     priceSource: "30-min TWAP × USDG price",

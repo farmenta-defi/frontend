@@ -36,14 +36,13 @@ describe("explainError", () => {
         ["PoolFrozenForNewPositions", [POOL], /frozen.*no new collateral/],
         ["PoolNotOpenForBorrowing", [POOL], /frozen.*no new loans/],
         ["BorrowExceedsMaxLtv", [700n * 10n ** 18n, 650n * 10n ** 18n], /\$700.*\$650/],
-        ["BorrowBelowMinimum", [4_000_000n], /at least 10 USDG.*4 USDG/],
         ["PoolDebtCapExceeded", [POOL, 501_000_000_000n, 500_000_000_000n], /500,000 USDG.*501,000 USDG/],
         ["MarketDebtCapExceeded", [501_000_000_000n, 500_000_000_000n], /500,000 USDG.*501,000 USDG/],
         ["UsdgPriceOutOfBounds", [960_000_000_000_000_000n], /\$0\.96/],
         ["StalePrice", [zeroAddress, 1_700_000_000n], /price feed/],
         ["OutstandingDebt", [123n, 5n], /Repay the loan in full/],
         ["PermitRejected", [123n], /signature/i],
-        ["PositionBelowMinimum", [40n * 10n ** 18n, 50n * 10n ** 18n], /\$40.*\$50/],
+        ["PositionBelowMinimum", [4n * 10n ** 18n, 5n * 10n ** 18n], /\$4.*\$5/],
         ["ERC4626ExceededMaxWithdraw", [zeroAddress, 200_000_000n, 150_000_000n], /up to 150 USDG.*200 USDG/],
       ];
       for (const [name, args, expected] of cases) {

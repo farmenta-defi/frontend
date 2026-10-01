@@ -29,7 +29,6 @@ const BLOCKED: Record<string, string> = {
   InsufficientBalance: "Insufficient balance",
   ERC4626ExceededMaxWithdraw: "Over the withdrawable amount",
   BorrowExceedsMaxLtv: "Over the max LTV",
-  BorrowBelowMinimum: "Below the 10 USDG minimum",
   EnforcedPause: "Market paused",
   PoolNotOpenForBorrowing: "Pool frozen",
   PoolFrozenForNewPositions: "Pool frozen",

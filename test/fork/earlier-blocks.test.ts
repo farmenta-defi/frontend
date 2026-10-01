@@ -129,7 +129,7 @@ describe("before the meme pools were listed", () => {
       const { fee, range } = describePosition(await readPosition(publicClient, meme, TOKEN, user.address));
 
       expect(fee).toBe("0.269%");
-      expect(range).toBe("0.1402 to 0.2498 USDG");
+      expect(range).toBe("0.1512 to 0.2035 USDG");
     });
   });
 });

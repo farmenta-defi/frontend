@@ -59,8 +59,6 @@ const MESSAGES: Record<string, (args: Args) => string> = {
   // borrowing
   BorrowExceedsMaxLtv: ([requested, maximum]) =>
     `That would bring the loan to ${usd(requested)}, above the ${usd(maximum)} this position can borrow. Borrow less.`,
-  BorrowBelowMinimum: ([debt]) =>
-    `A loan must owe at least 10 USDG. This would leave it at ${usdg(debt)}; borrow more.`,
   ZeroBorrowAmount: () => "Enter an amount to borrow.",
   PoolDebtCapExceeded: ([, requested, cap]) =>
     `This pool can lend ${usdg(cap)} in total and that would bring it to ${usdg(requested)}. Borrow less, or try later.`,

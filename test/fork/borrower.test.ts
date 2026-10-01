@@ -17,7 +17,6 @@ import {
   withdrawCollateralGate,
 } from "@/lib/onchain/gates";
 import { readPosition } from "@/lib/onchain/reads";
-import { MIN_DEBT_USDG } from "@/lib/units";
 
 import { ETH_USDG, META_USDG, POSITIONS } from "./support/constants";
 import {
@@ -214,18 +213,15 @@ describe("borrow", () => {
       expect(await usdgBalance(user.address)).toBe(0n);
     });
 
-    it("a loan that would owe less than 10 USDG is refused with the minimum in the message", async () => {
+    it("a loan of nothing is refused, by the gate and by the contract", async () => {
       const user = await depositedBorrower();
       const state = await position(TOKEN, user.address);
-      const gate = borrowGate(state, MIN_DEBT_USDG - 1n);
-      expect(gate).toMatchObject({ ok: false, code: "BorrowBelowMinimum" });
-      expect(gate.ok === false && gate.message).toMatch(/at least 10 USDG/);
+      expect(borrowGate(state, 0n)).toMatchObject({ ok: false, code: "NoAmount" });
       const nonce = await nonceOf(user.address);
 
-      const refused = await refusal(borrow(user.clients, blueChip, TOKEN, MIN_DEBT_USDG - 1n));
+      const refused = await refusal(borrow(user.clients, blueChip, TOKEN, 0n));
 
-      expect(refused.code).toBe("BorrowBelowMinimum");
-      expect(refused.message).toMatch(/at least 10 USDG/);
+      expect(refused.code).toBe("ZeroBorrowAmount");
       expect(await nonceOf(user.address), "a transaction was sent").toBe(nonce);
       expect(await debtOf(market, TOKEN)).toBe(0n);
     });
@@ -255,15 +251,25 @@ describe("borrow", () => {
       expect(borrowGate(after, USDG)).toMatchObject({ ok: false, code: "BorrowExceedsMaxLtv" });
     });
 
-    it("exactly 10 USDG is a loan", async () => {
+    it("there is no minimum loan: the smallest unit of USDG is lent and owed", async () => {
       const user = await depositedBorrower();
+      expect(borrowGate(await position(TOKEN, user.address), 1n)).toEqual({ ok: true });
 
-      await borrow(user.clients, blueChip, TOKEN, MIN_DEBT_USDG);
+      await borrow(user.clients, blueChip, TOKEN, 1n);
 
-      expect(await debtOf(market, TOKEN)).toBeGreaterThanOrEqual(MIN_DEBT_USDG);
+      expect(await usdgBalance(user.address)).toBe(1n);
+      expect(await debtOf(market, TOKEN)).toBeGreaterThanOrEqual(1n);
     });
 
-    it("a small top-up is held to the minimum on the total, not on the amount", async () => {
+    it("a loan under the 10 USDG the first deployment asked for goes through", async () => {
+      const user = await depositedBorrower();
+
+      await borrow(user.clients, blueChip, TOKEN, 4n * USDG);
+
+      expect(await usdgBalance(user.address)).toBe(4n * USDG);
+    });
+
+    it("a small top-up on a loan goes through", async () => {
       const user = await depositedBorrower();
       await borrow(user.clients, blueChip, TOKEN, 50n * USDG);
 

@@ -1,4 +1,5 @@
-// A local fork of Robinhood Chain, as it was just after Farmenta's six pools were listed.
+// A local fork of Robinhood Chain, as it was just after Farmenta's six pools were listed on the
+// deployment of 1 Oct 2026.
 //
 //   pnpm fork            start it on port 8545 and keep it running, for `pnpm dev`
 //
@@ -6,10 +7,14 @@
 //
 // What a start does:
 //   1. `anvil` as a fork at FORK_BLOCK. Nothing is deployed to it: Farmenta is on the chain
-//      (docs ARCHITECTURE.md §18.1), and the manifest is the one the app runs on in
+//      (docs ARCHITECTURE.md §18.2), and the manifest is the one the app runs on in
 //      production, deployments/mainnet.json
 //   2. every pool in LISTED_POOLS is read back from the policy on the fork. A pool that is not
 //      listed there, or takes no new positions, stops the start
+//   3. at FORK_BLOCK only: the three meme pools' prices are recorded in `TwapRecorder` every
+//      five minutes for 35 minutes of the fork's own time, as the keeper does on the chain.
+//      `TwapRecorder` was deployed anew on 1 Oct 2026 and nobody had recorded in it by
+//      FORK_BLOCK, and the oracle prices a meme pool only from 30 minutes of recordings
 //
 // The pools in LISTED_POOLS are the ones the app has a page for (`src/lib/markets.ts`); a unit
 // test holds the two lists together.
@@ -24,34 +29,35 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createTestClient, http, keccak256, parseAbi, publicActions, toHex, walletActions, zeroAddress } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { robinhood } from "viem/chains";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const MANIFEST = join(ROOT, "deployments/mainnet.json");
 
 /**
- * 29 Sep 2026, 05:55 UTC. All six pools are listed (the last in block 75,356,784), and the
- * three meme pools have more than the 30 minutes of recorded prices the oracle asks for:
- * `TwapRecorder` recorded them last in block 75,422,185, fifteen blocks before this one. The
- * oracle takes a recording for fresh for 900 seconds, which is what a run has to finish in
- * before the meme pools' prices have to be recorded again (the market does so itself when a
- * position is deposited or borrowed against).
+ * 1 Oct 2026, 08:02 UTC, on the deployment of that day (docs ARCHITECTURE.md §18.2). All six
+ * pools are listed (the last in block 77,210,845). No meme price had been recorded on the
+ * chain by then, so the start records them on the fork (step 3 above) and the fork's clock
+ * ends 35 minutes after the block's. The oracle takes a recording for fresh for 900 seconds,
+ * which is what a run has to finish in before the meme pools' prices have to be recorded again
+ * (the market does so itself when a position is deposited or borrowed against).
  */
-export const FORK_BLOCK = 75_422_200n;
+export const FORK_BLOCK = 77_216_000n;
 
 /**
- * 29 Sep 2026, between the two rounds of listings: ETH, META and NVDA are listed (by block
- * 75,326,578) and CASHCAT, PONS and AI are not yet (from block 75,356,765). What a pool's
- * page has to say before its pool is listed is tested here.
+ * 1 Oct 2026, between the listings: ETH, META and NVDA are listed (by block 77,210,762) and
+ * CASHCAT, PONS and AI are not yet (from block 77,210,787). What a pool's page has to say
+ * before its pool is listed is tested here.
  */
-export const BEFORE_MEME_LISTINGS_BLOCK = 75_340_000n;
+export const BEFORE_MEME_LISTINGS_BLOCK = 77_210_770n;
 
 /**
- * 29 Sep 2026, just after the second round: all six pools are listed, and no price of a meme
- * pool has been recorded yet (the first recording is in block 75,360,361). What a meme pool's
- * page has to say before it has 30 minutes of prices is tested here.
+ * 1 Oct 2026, just after the last listing: all six pools are listed, and no price of a meme
+ * pool has been recorded. What a meme pool's page has to say before it has 30 minutes of
+ * prices is tested here.
  */
-export const BEFORE_MEME_PRICES_BLOCK = 75_358_000n;
+export const BEFORE_MEME_PRICES_BLOCK = 77_211_000n;
 
 /** Addresses from docs ARCHITECTURE.md §18. External contracts, not Farmenta's. */
 export const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
@@ -140,12 +146,40 @@ function freePort() {
 }
 
 const policyAbi = parseAbi(["function acceptsNewPositions(bytes32 poolId) view returns (bool)"]);
+const recorderAbi = parseAbi([
+  "function record((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) key)",
+]);
+
+/** The keeper's schedule: a recording every five minutes, and 30 minutes of them before a price. */
+const RECORD_EVERY_SECONDS = 300;
+const RECORDINGS = 8;
+
+/**
+ * Records the meme pools' prices on the fork the way the keeper does on the chain, so that
+ * the oracle has its 30 minutes of them. Anyone may record; the wallet is made for the fork.
+ */
+async function recordMemePrices(client, recorder, pools) {
+  const account = privateKeyToAccount(forkKey("fork-price-recorder"));
+  await client.setBalance({ address: account.address, value: 10n ** 18n });
+  for (let recorded = 0; recorded < RECORDINGS; recorded++) {
+    for (const pool of pools) {
+      const hash = await client.writeContract({ account, address: recorder, abi: recorderAbi, functionName: "record", args: [pool.key] });
+      const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 50 });
+      if (receipt.status !== "success") fail(`recording the price of pool ${pool.id} reverted`);
+    }
+    if (recorded < RECORDINGS - 1) {
+      await client.increaseTime({ seconds: RECORD_EVERY_SECONDS });
+      await client.mine({ blocks: 1 });
+    }
+  }
+}
 
 /**
  * Starts the fork.
  * @param {{ port?: number, block?: bigint, listed?: { id: string }[] }} [options] `port`
  *   defaults to one that is free, `block` to FORK_BLOCK, and `listed`, the pools that have to
- *   take new positions at that block, to LISTED_POOLS.
+ *   take new positions at that block, to LISTED_POOLS. A fork at another block than FORK_BLOCK
+ *   is left as the chain was: no price is recorded on it.
  * @returns {Promise<{ url: string, manifest: string, stop: () => void }>} `manifest` is the
  *   JSON text of deployments/mainnet.json.
  */
@@ -227,6 +261,10 @@ async function startOnce(upstream, { port, block = FORK_BLOCK, listed = LISTED_P
         args: [pool.id],
       });
       if (!accepts) fail(`pool ${pool.id} takes no new positions at block ${block}; is it listed there?`);
+    }
+    if (block === FORK_BLOCK) {
+      const recorder = JSON.parse(manifest).twapRecorder.address;
+      await recordMemePrices(client, recorder, listed.filter((pool) => pool.tier === "meme"));
     }
 
     return { url, manifest, stop };

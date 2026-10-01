@@ -25,11 +25,14 @@ deployment was made from.
 
 `scripts/fork.mjs`, once per run:
 
-1. starts `anvil` as a fork at block 75,422,200 (29 Sep 2026, 05:55 UTC). All six pools are
-   listed by then, and the three meme pools have more than 30 minutes of recorded prices, the
-   last recording fifteen blocks earlier;
+1. starts `anvil` as a fork at block 77,216,000 (1 Oct 2026, 08:02 UTC), on the deployment of
+   that day. All six pools are listed by then;
 2. reads the manifest the app runs on in production, `deployments/mainnet.json`;
-3. checks on the fork that each of the six pools takes new positions, and stops if one does not.
+3. checks on the fork that each of the six pools takes new positions, and stops if one does not;
+4. records the three meme pools' prices in `TwapRecorder` every five minutes for 35 minutes of
+   the fork's own time, as the keeper does on the chain. `TwapRecorder` was deployed anew with
+   the rest and held no recording at that block, and the oracle prices a meme pool only from 30
+   minutes of them. The fork's clock therefore starts 35 minutes after the block's.
 
 The tests read the manifest through `parseDeployment`, the way the app reads one. Every test
 runs inside an anvil snapshot and starts from the state above.
@@ -44,9 +47,9 @@ Time on the fork runs on from the block's. The oracle takes a recorded meme pric
 does every five minutes (`recordPrice`).
 
 `earlier-blocks.test.ts` starts two more forks, one after the other, for what a page says of a
-pool that is not ready yet: at block 75,340,000 the three blue-chip pools are listed and the
-three meme pools are not, and at block 75,358,000 the meme pools are listed and none of their
-prices has been recorded.
+pool that is not ready yet: at block 77,210,770 the three blue-chip pools are listed and the
+three meme pools are not, and at block 77,211,000 the meme pools are listed and none of their
+prices has been recorded. Nothing is recorded on these two forks at their start.
 
 ## The same fork, for the app
 
@@ -55,7 +58,7 @@ prices has been recorded.
 ```sh
 pnpm fork
 NEXT_PUBLIC_FARMENTA_DEPLOYMENT=mainnet NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8545 \
-  NEXT_PUBLIC_LOGS_RPC_URL=http://127.0.0.1:8545 NEXT_PUBLIC_LOGS_FROM_BLOCK=75422200 pnpm dev
+  NEXT_PUBLIC_LOGS_RPC_URL=http://127.0.0.1:8545 NEXT_PUBLIC_LOGS_FROM_BLOCK=77216000 pnpm dev
 ```
 
 The two `LOGS` variables point the search for a wallet's positions at the fork. It reads logs
