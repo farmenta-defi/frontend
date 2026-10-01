@@ -30,6 +30,7 @@ const BLOCKED: Record<string, string> = {
   ERC4626ExceededMaxWithdraw: "Over the withdrawable amount",
   BorrowExceedsMaxLtv: "Over the max LTV",
   EnforcedPause: "Market paused",
+  MarketClosed: "Temporarily closed",
   PoolNotOpenForBorrowing: "Pool frozen",
   PoolFrozenForNewPositions: "Pool frozen",
   PoolNotListed: "Pool not listed",

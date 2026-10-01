@@ -13,7 +13,7 @@ import { directoryRows, inRanges, NO_RANGES, type DirectoryRanges, type Director
 import { knownPools, type ListedPool } from "@/lib/backend/figures";
 import { useListedPools, usePoolsFigures } from "@/lib/backend/hooks";
 import { fmtCompactUsdg, fmtPct, NO_FIGURE, orDash } from "@/lib/format";
-import { COLLATERAL_POOLS, MARKETS, poolHref, type CollateralPool } from "@/lib/markets";
+import { closureOf, COLLATERAL_POOLS, MARKETS, poolHref, type CollateralPool } from "@/lib/markets";
 import { cn } from "@/lib/utils";
 
 /**
@@ -246,18 +246,46 @@ export function MarketDirectory() {
               const { pool } = row;
               const market = MARKETS.find((item) => item.id === pool.tier)!;
               const href = poolHref(pool);
+              // A pool of a market the app holds closed is listed and does not open.
+              const closure = closureOf(pool.tier);
               return (
-                <tr key={pool.poolId} onClick={() => router.push(href)} className="group cursor-pointer border-b border-border/70 text-[14px] transition-colors last:border-b-0 hover:bg-white/[0.035]">
+                <tr
+                  key={pool.poolId}
+                  onClick={closure ? undefined : () => router.push(href)}
+                  aria-disabled={closure ? true : undefined}
+                  className={cn(
+                    "group border-b border-border/70 text-[14px] transition-colors last:border-b-0",
+                    closure ? "cursor-not-allowed" : "cursor-pointer hover:bg-white/[0.035]",
+                  )}
+                >
                   <td className="px-6 py-5"><span className="flex items-center gap-2"><AssetMark asset="USDG" size={20} /><span className="font-semibold text-foreground">USDG</span></span></td>
-                  <td className="px-5 py-5">
+                  <td className="relative px-5 py-5">
                     <div className="flex items-center gap-2.5">
                       <AssetPair pair={pool.pair} size={24} hint="Uniswap v4 LP" />
                       <div>
-                        {/* A real link inside the row, so the pool opens with the keyboard or a middle click too. */}
-                        <Link href={href} onClick={(event) => event.stopPropagation()} className="focus-ring rounded font-semibold text-foreground">{pool.pair}</Link>
+                        {closure ? (
+                          // Focusable, so the notice can be read with the keyboard as well as on hover.
+                          <span tabIndex={0} aria-describedby={`closed-${pool.poolId}`} className="focus-ring flex items-center gap-2 rounded">
+                            <span className="font-semibold text-steel-300">{pool.pair}</span>
+                            <Badge tone="neutral">{closure.label}</Badge>
+                          </span>
+                        ) : (
+                          // A real link inside the row, so the pool opens with the keyboard or a middle click too.
+                          <Link href={href} onClick={(event) => event.stopPropagation()} className="focus-ring rounded font-semibold text-foreground">{pool.pair}</Link>
+                        )}
                         <div className="mt-0.5 text-[12px] text-steel-500">{market.name} market{row.frozen ? " · frozen" : ""}</div>
                       </div>
                     </div>
+                    {closure && (
+                      // Above the row: the table's wrapper clips what hangs below its last row.
+                      <span
+                        id={`closed-${pool.poolId}`}
+                        role="tooltip"
+                        className="pointer-events-none absolute bottom-full left-5 z-20 -mb-2 w-[26rem] max-w-[70vw] rounded-lg border border-border bg-popover px-3 py-2 text-[12px] leading-[18px] text-steel-300 opacity-0 shadow-2xl transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+                      >
+                        {closure.notice}
+                      </span>
+                    )}
                   </td>
                   <td className="tnum px-5 py-5 text-right font-medium text-foreground"><Cell pending={pending}>{orDash(row.maxLtvPct, fmtPct)}</Cell></td>
                   <td className="px-5 py-5"><Badge tone={pool.tier === "meme" ? "warn" : "neutral"}>{pool.trustedBy}</Badge></td>
@@ -266,7 +294,7 @@ export function MarketDirectory() {
                   <td className="tnum relative px-6 py-5 text-right font-medium text-foreground">
                     <Cell pending={pending}>{orDash(row.borrowAprPct, fmtPct)}</Cell>
                     {/* Out of the flow, so the figure sits on the same line as the rest of its row. */}
-                    <span className="pointer-events-none absolute bottom-1 right-6 inline-flex items-center gap-1 text-[11px] text-brand-300 opacity-0 transition-opacity group-hover:opacity-100">Open <ArrowUpRight className="size-3" /></span>
+                    {!closure && <span className="pointer-events-none absolute bottom-1 right-6 inline-flex items-center gap-1 text-[11px] text-brand-300 opacity-0 transition-opacity group-hover:opacity-100">Open <ArrowUpRight className="size-3" /></span>}
                   </td>
                 </tr>
               );
@@ -279,21 +307,29 @@ export function MarketDirectory() {
         {filteredRows.map((row: Row) => {
           const { pool } = row;
           const market = MARKETS.find((item) => item.id === pool.tier)!;
-          return (
-            <Link key={pool.poolId} href={poolHref(pool)} className="block px-4 py-5 transition-colors hover:bg-white/[0.035] focus-ring">
+          const closure = closureOf(pool.tier);
+          const card = (
+            <>
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-2"><AssetPair pair={pool.pair} size={20} /><h3 className="text-[15px] font-semibold text-foreground">{pool.pair}</h3></div>
+                  <div className="flex items-center gap-2"><AssetPair pair={pool.pair} size={20} /><h3 className={cn("text-[15px] font-semibold", closure ? "text-steel-300" : "text-foreground")}>{pool.pair}</h3></div>
                   <p className="mt-1 flex items-center gap-1.5 text-[12px] text-steel-500"><AssetMark asset="USDG" size={14} />USDG · {market.name} · {pool.trustedBy}</p>
                 </div>
-                <ArrowUpRight className="size-4 text-steel-500" />
+                {closure ? <Badge tone="neutral">{closure.label}</Badge> : <ArrowUpRight className="size-4 text-steel-500" />}
               </div>
+              {closure && <p className="mt-3 text-[12px] leading-[18px] text-steel-400">{closure.notice}</p>}
               <div className="mt-5 grid grid-cols-3 gap-4">
                 <div><p className="label-xs">LLTV</p><p className="tnum mt-1 text-[13px] text-foreground"><Cell pending={pending}>{orDash(row.maxLtvPct, fmtPct)}</Cell></p></div>
                 <div><p className="label-xs">Borrow</p><p className="tnum mt-1 text-[13px] text-foreground"><Cell pending={pending}>{orDash(row.debtUsdg, fmtCompactUsdg)}</Cell></p></div>
                 <div><p className="label-xs">APR</p><p className="tnum mt-1 text-[13px] text-foreground"><Cell pending={pending}>{orDash(row.borrowAprPct, fmtPct)}</Cell></p></div>
               </div>
-            </Link>
+            </>
+          );
+          // A touch screen has no hover, so a closed pool's card carries the notice itself and is not a link.
+          return closure ? (
+            <div key={pool.poolId} aria-disabled className="block px-4 py-5">{card}</div>
+          ) : (
+            <Link key={pool.poolId} href={poolHref(pool)} className="block px-4 py-5 transition-colors hover:bg-white/[0.035] focus-ring">{card}</Link>
           );
         })}
       </div>

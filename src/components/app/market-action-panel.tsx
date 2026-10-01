@@ -9,11 +9,12 @@ import { HealthBar, hfLabel, hfTone } from "@/components/ui/health-bar";
 import { Segmented } from "@/components/ui/segmented";
 import { useMarket, usePoolFigures } from "@/lib/backend/hooks";
 import { fmtPct, fmtUsd, fmtUsdg, orDash } from "@/lib/format";
-import { MARKETS, NETWORKS, type CollateralPool } from "@/lib/markets";
+import { closureOf, MARKETS, NETWORKS, type CollateralPool } from "@/lib/markets";
 import { borrow, depositCollateral, repay, supply, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
 import {
   borrowGate,
   depositCollateralGate,
+  entryGate,
   repayGate,
   supplyGate,
   withdrawCollateralGate,
@@ -40,6 +41,10 @@ import { cn } from "@/lib/utils";
  * the debt, the borrowing room, the health factor) is read from the chain. The
  * rates and the utilisation are read from the backend, and are a dash while
  * it cannot be read; the actions do not wait for them.
+ *
+ * In a market the app holds closed (`closureOf`), what brings funds in is refused with the
+ * closure's notice: supplying, depositing a position, borrowing. Withdrawing, repaying and
+ * taking collateral back are decided as in any other market.
  */
 type Tab = "borrow" | "supply";
 
@@ -98,7 +103,12 @@ function SupplySide({ pool }: { pool: CollateralPool }) {
 
   const supplying = mode === "supply";
   const limit = supplying ? state?.balance : state?.maxWithdraw;
-  const gate = !state ? LOADING : supplying ? supplyGate(state, amount) : withdrawGate(state, amount);
+  const closure = closureOf(pool.tier);
+  const gate = supplying
+    ? entryGate(closure, state ? supplyGate(state, amount) : LOADING)
+    : state
+      ? withdrawGate(state, amount)
+      : LOADING;
   const over = !gate.ok && ["InsufficientBalance", "ERC4626ExceededMaxWithdraw"].includes(gate.code);
 
   const change = (next: string) => {
@@ -138,7 +148,7 @@ function SupplySide({ pool }: { pool: CollateralPool }) {
           onChange={change}
           limitLabel={usdg(limit)}
           onMax={() => change(limit === undefined ? "" : formatUsdg(limit))}
-          disabled={!state || action.busy}
+          disabled={!state || action.busy || (supplying && closure !== null)}
           invalid={over}
         />
       </Card>
@@ -189,16 +199,17 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
   const held = position?.place === "collateral";
   const borrowing = mode === "borrow";
 
+  const closure = closureOf(pool.tier);
   const gate: Gate = !position
-    ? {
+    ? entryGate(closure, {
         ok: false,
         code: list.status === "loading" ? "Loading" : list.status === "failed" ? "PositionsUnavailable" : "NoPosition",
         message: "",
-      }
+      })
     : !held
-      ? depositCollateralGate(position, pool.poolId)
+      ? entryGate(closure, depositCollateralGate(position, pool.poolId))
       : borrowing
-        ? borrowGate(position, amount)
+        ? entryGate(closure, borrowGate(position, amount))
         : repayGate(position, amount);
   const exit = position && held ? withdrawCollateralGate(position) : LOADING;
 
@@ -289,7 +300,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
             onChange={change}
             limitLabel={usdg(limit)}
             onMax={() => change(limit === undefined ? "" : formatUsdg(limit))}
-            disabled={action.busy || limit === undefined || limit === 0n}
+            disabled={action.busy || limit === undefined || limit === 0n || (borrowing && closure !== null)}
             invalid={over}
           />
         </Card>
