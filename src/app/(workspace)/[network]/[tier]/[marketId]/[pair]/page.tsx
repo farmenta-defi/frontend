@@ -87,17 +87,11 @@ export default async function MarketDetailPage({ params }: { params: Promise<Rou
           </Badge>
           <Badge tone={pool.tier === "meme" ? "warn" : "brand"}>{market.name} market</Badge>
           <Badge tone="neutral">{pool.trustedBy}</Badge>
+          {/* A market the app holds closed is reachable by its address even though the directory
+              does not open it, so its pools' pages carry the label too. */}
           {closure && <Badge tone="neutral">{closure.label}</Badge>}
         </div>
       </header>
-
-      {/* A market the app holds closed is reachable by its address even though the directory
-          does not open it, so the page says so before anything else. */}
-      {closure && (
-        <p role="status" className="mt-6 rounded-xl border border-border bg-white/[0.03] px-4 py-3 text-[13px] leading-5 text-steel-300">
-          {closure.notice}
-        </p>
-      )}
 
       {/* Reading column and action rail. Four metrics will not sit on one line
           beside a 356px rail inside max-w-6xl, so they pair up instead of

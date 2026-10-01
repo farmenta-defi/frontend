@@ -42,8 +42,8 @@ import { cn } from "@/lib/utils";
  * rates and the utilisation are read from the backend, and are a dash while
  * it cannot be read; the actions do not wait for them.
  *
- * In a market the app holds closed (`closureOf`), what brings funds in is refused with the
- * closure's notice: supplying, depositing a position, borrowing. Withdrawing, repaying and
+ * In a market the app holds closed (`closureOf`), what brings funds in is refused, and the
+ * button says so: supplying, depositing a position, borrowing. Withdrawing, repaying and
  * taking collateral back are decided as in any other market.
  */
 type Tab = "borrow" | "supply";

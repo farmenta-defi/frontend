@@ -220,7 +220,8 @@ export function ActionNote({
   }
 
   const refused = !session.gate.ok ? session.gate : !gate.ok ? gate : null;
-  const quiet = refused && ["NoAmount", "NotConnected"].includes(refused.code);
+  // A closed market is said on the button and by the page's badge, and no line repeats it.
+  const quiet = refused && ["NoAmount", "NotConnected", "MarketClosed"].includes(refused.code);
   return (
     <>
       {state.status === "done" && (

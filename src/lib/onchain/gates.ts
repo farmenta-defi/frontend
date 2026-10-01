@@ -36,8 +36,8 @@ const missing = (amount: Amount): amount is null | 0n => amount === null || amou
  * `lib/markets`). A closed market refuses before anything else is looked at. The gates of what
  * takes funds out are not passed through here.
  */
-export function entryGate(closure: { notice: string } | null, gate: Gate): Gate {
-  return closure ? refuse("MarketClosed", closure.notice) : gate;
+export function entryGate(closure: { label: string } | null, gate: Gate): Gate {
+  return closure ? refuse("MarketClosed", closure.label) : gate;
 }
 
 export function supplyGate(state: LenderState, assets: Amount): Gate {

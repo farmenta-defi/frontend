@@ -90,7 +90,7 @@ describe("lender gates", () => {
 });
 
 describe("entryGate, the app's switch for a market it holds closed", () => {
-  const closure = { notice: "The Meme market is temporarily closed." };
+  const closure = { label: "Temporarily closed" };
 
   describe("positive", () => {
     it("leaves a gate as it is in a market that is not closed", () => {
@@ -100,10 +100,10 @@ describe("entryGate, the app's switch for a market it holds closed", () => {
   });
 
   describe("negative", () => {
-    it("refuses what would otherwise go through, with the closure's notice", () => {
+    it("refuses what would otherwise go through, with the closure's label", () => {
       const gate = entryGate(closure, supplyGate(lender(), 100n * USDG));
 
-      expect(gate).toEqual({ ok: false, code: "MarketClosed", message: closure.notice });
+      expect(gate).toEqual({ ok: false, code: "MarketClosed", message: closure.label });
       expect(code(entryGate(closure, borrowGate(collateral(), 4n * USDG)))).toBe("MarketClosed");
       expect(code(entryGate(closure, depositCollateralGate(inWallet(), POOL)))).toBe("MarketClosed");
     });

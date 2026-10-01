@@ -41,8 +41,9 @@ export const MARKETS: Market[] = [
 
 /**
  * A market the app holds closed for now. Its pools stay in the directory, where they carry the
- * label and cannot be opened, and a pool's page carries the notice and takes no new supply,
- * collateral or loan. Withdrawing, repaying
+ * label and cannot be opened, and a pool's page carries the label and takes no new supply,
+ * collateral or loan. The app gives the label and no further reason (decided by the product
+ * owner, 1 Oct 2026). Withdrawing, repaying
  * and taking collateral back stay open.
  *
  * This is the app's switch, not the contracts': nothing is paused or frozen on the chain.
@@ -51,17 +52,12 @@ export const MARKETS: Market[] = [
 export type Closure = {
   /** Two words for a badge and a blocked button. */
   label: string;
-  /** One or two sentences: why, and what is open instead. */
-  notice: string;
 };
 
 export const CLOSED_MARKETS: Partial<Record<MarketTier, Closure>> = {
   // The oracle prices a meme pool from 30 minutes of recordings in `TwapRecorder`, and the
   // recorder deployed on 1 Oct 2026 holds none yet, so no meme position can be priced.
-  meme: {
-    label: "Temporarily closed",
-    notice: "The Meme market is temporarily closed while its price recorder is being set up. Blue chip pools are open.",
-  },
+  meme: { label: "Temporarily closed" },
 };
 
 export const closureOf = (tier: MarketTier): Closure | null => CLOSED_MARKETS[tier] ?? null;

@@ -256,13 +256,8 @@ describe("the fork", () => {
 
 describe("the markets the app holds closed", () => {
   describe("positive", () => {
-    it("the Meme market is closed, with a label for a badge and a notice that says what is open", () => {
-      const closure = closureOf("meme");
-
-      expect(closure).not.toBeNull();
-      expect(closure!.label).toBe("Temporarily closed");
-      expect(closure!.notice).toMatch(/Meme market is temporarily closed/);
-      expect(closure!.notice).toMatch(/Blue chip pools are open/);
+    it("the Meme market is closed, with a label for a badge and a blocked button and nothing more", () => {
+      expect(closureOf("meme")).toEqual({ label: "Temporarily closed" });
     });
   });
 
@@ -281,7 +276,7 @@ describe("the markets the app holds closed", () => {
 
     it("says so without an em dash, as every sentence of the app does", () => {
       for (const closure of Object.values(CLOSED_MARKETS)) {
-        expect(`${closure.label} ${closure.notice}`).not.toContain("\u2014");
+        expect(closure.label).not.toContain("\u2014");
       }
     });
   });
