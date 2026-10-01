@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  foldFees,
   ACTIVITY_FILTERS,
   activityLabel,
   activityPageOf,
@@ -497,6 +498,72 @@ describe("what a pool's list can be narrowed to", () => {
         if (filter.id === "all" || filter.id === "liquidation") continue;
         expect(activityLabel(poolRowsOf([poolRow(filter.id)])[0]), filter.id).toBe(filter.label);
       }
+    });
+  });
+});
+
+describe("foldFees: a change of liquidity is one row", () => {
+  /** Two logs of one transaction, newest first as the backend sends them: the liquidity's comes after the fees'. */
+  const together = (kind: string, fromLog: number) => {
+    const { transactionHash } = common(fromLog);
+    return [
+      { ...loanRow(kind, null, fromLog + 1), transactionHash },
+      { ...loanRow("collect_fees", null, fromLog), transactionHash },
+    ];
+  };
+  const removal = (fromLog: number) => together("decrease_liquidity", fromLog);
+  const kinds = (rows: { kind: string; withFees?: boolean }[]) => rows.map((row) => (row.withFees ? `${row.kind}+fees` : row.kind));
+
+  describe("positive", () => {
+    it("shows a removal and the fees paid out with it as one row that says so", () => {
+      const rows = foldFees(rowsOf(removal(4)));
+
+      expect(kinds(rows)).toEqual(["liquidity-decrease+fees"]);
+      expect(activityLabel(rows[0])).toBe("Remove liquidity");
+    });
+
+    it("does the same for liquidity added", () => {
+      const rows = foldFees(rowsOf(together("increase_liquidity", 4)));
+
+      expect(kinds(rows)).toEqual(["liquidity-increase+fees"]);
+    });
+  });
+
+  describe("negative", () => {
+    it("keeps the row of fees collected on their own", () => {
+      expect(kinds(foldFees(rowsOf([loanRow("collect_fees", null, 4)])))).toEqual(["fees-collect"]);
+    });
+
+    it("does not fold the fees of another transaction, or of another position", () => {
+      const liquidity = loanRow("decrease_liquidity", null, 5);
+      // The fees of another transaction, and the fees of another position in the same one.
+      const elsewhere = { ...loanRow("collect_fees", null, 2), transactionHash: `0x${"ab".repeat(32)}` };
+      const other = { ...loanRow("collect_fees", null, 3), transactionHash: liquidity.transactionHash, tokenId: "999" };
+
+      const rows = foldFees(rowsOf([liquidity, other, elsewhere]));
+
+      expect(kinds(rows)).toEqual(["liquidity-decrease", "fees-collect", "fees-collect"]);
+    });
+  });
+
+  describe("edge case", () => {
+    it("leaves the removal without the mention until the page with its fees is read, and folds it then", () => {
+      const [liquidity, fees] = removal(4);
+      const first = activityPageOf(page([liquidity], { hasMore: true, nextCursor: "1:5" }))!;
+      const second = activityPageOf(page([fees]))!;
+
+      expect(kinds(foldFees(historyRows([first])))).toEqual(["liquidity-decrease"]);
+      expect(kinds(foldFees(historyRows([first, second])))).toEqual(["liquidity-decrease+fees"]);
+    });
+
+    it("touches no other row, and keeps their order", () => {
+      const rows = rowsOf([loanRow("repay", "1000000", 9), ...removal(4), loanRow("borrow", "2000000", 2)]);
+
+      expect(kinds(foldFees(rows))).toEqual(["repay", "liquidity-decrease+fees", "borrow"]);
+    });
+
+    it("still counts under the filter for liquidity and fees", () => {
+      expect(foldFees(rowsOf(removal(4))).every((row) => matchesFilter(row, "liquidity"))).toBe(true);
     });
   });
 });

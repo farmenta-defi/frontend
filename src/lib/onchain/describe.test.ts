@@ -1,7 +1,7 @@
 import { maxUint256, zeroAddress, type Address } from "viem";
 import { describe, expect, it } from "vitest";
 
-import { describePosition } from "./describe";
+import { describePosition, feesInWords } from "./describe";
 import type { PositionState } from "./reads";
 
 const USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168";
@@ -16,7 +16,7 @@ const inWallet = (over: Partial<PositionState> = {}): PositionState => ({
   // 1.0001^-198,599 × 1e12 is about $2,373, and 900 ticks up about $2,596.
   ticks: { tickLower: -198_599, tickUpper: -197_699 },
   decimals: [18, 6],
-  holdings: { amount0: 2n * 10n ** 17n, amount1: 500_000_000n, principalUsd: 1_000n * WAD, feesUsd: 25n * WAD },
+  holdings: { liquidity: 1_000n, amount0: 2n * 10n ** 17n, amount1: 500_000_000n, fees0: 0n, fees1: 0n, principalUsd: 1_000n * WAD, feesUsd: 25n * WAD },
   holdingsError: null,
   pool: { status: "open", terms: { maxLtvBps: 6500, ltBps: 7500 } },
   paused: false,
@@ -63,8 +63,8 @@ describe("describePosition", () => {
 
   describe("negative", () => {
     it("says out of range when the position holds one token only, either one", () => {
-      const onlyUsdg = { amount0: 0n, amount1: 900_000_000n, principalUsd: 900n * WAD, feesUsd: 0n };
-      const onlyEth = { amount0: 4n * 10n ** 17n, amount1: 0n, principalUsd: 900n * WAD, feesUsd: 0n };
+      const onlyUsdg = { liquidity: 1_000n, amount0: 0n, amount1: 900_000_000n, fees0: 0n, fees1: 0n, principalUsd: 900n * WAD, feesUsd: 0n };
+      const onlyEth = { liquidity: 1_000n, amount0: 4n * 10n ** 17n, amount1: 0n, fees0: 0n, fees1: 0n, principalUsd: 900n * WAD, feesUsd: 0n };
 
       expect(describePosition(inWallet({ holdings: onlyUsdg })).inRange).toBe(false);
       expect(describePosition(inWallet({ holdings: onlyEth })).inRange).toBe(false);
@@ -85,7 +85,7 @@ describe("describePosition", () => {
   describe("edge case", () => {
     it("does not call a position that holds nothing out of range", () => {
       // Collateral whose liquidity is gone: the market holds it, so it is listed.
-      const empty = { amount0: 0n, amount1: 0n, principalUsd: 0n, feesUsd: 0n };
+      const empty = { liquidity: 1_000n, amount0: 0n, amount1: 0n, fees0: 0n, fees1: 0n, principalUsd: 0n, feesUsd: 0n };
       const described = describePosition(collateral({ holdings: empty, risk: { positionValue: 0n, maxBorrow: 0n, healthFactor: maxUint256 } }));
 
       expect(described.inRange).toBeNull();
@@ -94,7 +94,7 @@ describe("describePosition", () => {
 
     it("keeps collateral and fees apart when the fees are over a tenth of the principal", () => {
       // $1,000 of principal and $250 of fees. The market counts $100 of them: (1,000 + 100) with no haircut.
-      const holdings = { amount0: 2n * 10n ** 17n, amount1: 500_000_000n, principalUsd: 1_000n * WAD, feesUsd: 250n * WAD };
+      const holdings = { liquidity: 1_000n, amount0: 2n * 10n ** 17n, amount1: 500_000_000n, fees0: 0n, fees1: 0n, principalUsd: 1_000n * WAD, feesUsd: 250n * WAD };
       const risk = { positionValue: 1_100n * WAD, maxBorrow: 715_000_000n, healthFactor: maxUint256 };
 
       const described = describePosition(collateral({ holdings, risk }));
@@ -110,7 +110,7 @@ describe("describePosition", () => {
     });
 
     it("reports no fees as zero, which is a figure", () => {
-      const holdings = { amount0: 0n, amount1: 900_000_000n, principalUsd: 900n * WAD, feesUsd: 0n };
+      const holdings = { liquidity: 1_000n, amount0: 0n, amount1: 900_000_000n, fees0: 0n, fees1: 0n, principalUsd: 900n * WAD, feesUsd: 0n };
 
       expect(describePosition(inWallet({ holdings })).feesUsd).toBe(0);
     });
@@ -122,7 +122,7 @@ describe("describePosition", () => {
     });
 
     it("counts fees on a position that holds no principal on one side", () => {
-      const holdings = { amount0: 0n, amount1: 900_000_000n, principalUsd: 900n * WAD, feesUsd: 12n * WAD };
+      const holdings = { liquidity: 1_000n, amount0: 0n, amount1: 900_000_000n, fees0: 0n, fees1: 0n, principalUsd: 900n * WAD, feesUsd: 12n * WAD };
 
       expect(describePosition(inWallet({ holdings })).valueUsd).toBe(912);
     });
@@ -137,6 +137,7 @@ describe("describePosition", () => {
         valueUsd: null,
         feesUsd: null,
         amounts: null,
+        fees: null,
       });
     });
 
@@ -161,28 +162,28 @@ describe("the amounts and the prices of a position, by the side USDG is on", () 
     poolKey: { currency0: zeroAddress, currency1: USDG, fee: 0x800000, tickSpacing: 10, hooks: "0x06a889870C8f83640D6816319f72e2aA579b6080" },
     ticks: { tickLower: -199_030, tickUpper: -196_040 },
     decimals: [18, 6],
-    holdings: { amount0: 243_723_219_459_019_262n, amount1: 744_229_053n, principalUsd: 1_394n * WAD, feesUsd: 0n },
+    holdings: { liquidity: 1_000n, amount0: 243_723_219_459_019_262n, amount1: 744_229_053n, fees0: 0n, fees1: 0n, principalUsd: 1_394n * WAD, feesUsd: 0n },
   });
   /** META/USDG 3,150,520: USDG is currency0. */
   const meta = inWallet({
     poolKey: { currency0: USDG, currency1: META, fee: 3000, tickSpacing: 60, hooks: zeroAddress },
     ticks: { tickLower: 208_260, tickUpper: 211_620 },
     decimals: [6, 18],
-    holdings: { amount0: 412_294_036n, amount1: 1_372_749_240_445_278_056n, principalUsd: 1_388n * WAD, feesUsd: 0n },
+    holdings: { liquidity: 1_000n, amount0: 412_294_036n, amount1: 1_372_749_240_445_278_056n, fees0: 0n, fees1: 0n, principalUsd: 1_388n * WAD, feesUsd: 0n },
   });
   /** NVDA/USDG 3,387,125: USDG is currency0. */
   const nvda = inWallet({
     poolKey: { currency0: USDG, currency1: NVDA, fee: 100, tickSpacing: 1, hooks: zeroAddress },
     ticks: { tickLower: 221_360, tickUpper: 222_407 },
     decimals: [6, 18],
-    holdings: { amount0: 688_745_603n, amount1: 5_068_366_222_906_480_101n, principalUsd: 1_845n * WAD, feesUsd: 0n },
+    holdings: { liquidity: 1_000n, amount0: 688_745_603n, amount1: 5_068_366_222_906_480_101n, fees0: 0n, fees1: 0n, principalUsd: 1_845n * WAD, feesUsd: 0n },
   });
   /** CASHCAT/USDG 3,400,223: USDG is currency1, and the token is worth cents. */
   const cashcat = inWallet({
     poolKey: { currency0: CASHCAT, currency1: USDG, fee: 2690, tickSpacing: 54, hooks: zeroAddress },
     ticks: { tickLower: -295_974, tickUpper: -290_196 },
     decimals: [18, 6],
-    holdings: { amount0: 6_496_291_265_759_436_928_863n, amount1: 672_443_789n, principalUsd: 1_796n * WAD, feesUsd: 0n },
+    holdings: { liquidity: 1_000n, amount0: 6_496_291_265_759_436_928_863n, amount1: 672_443_789n, fees0: 0n, fees1: 0n, principalUsd: 1_796n * WAD, feesUsd: 0n },
   });
 
   describe("positive", () => {
@@ -240,9 +241,9 @@ describe("the amounts and the prices of a position, by the side USDG is on", () 
   describe("edge case", () => {
     it("reads a position that holds only the token, or only USDG, on either side", () => {
       // META/USDG 3,396,204, above its range in USDG terms: all META.
-      const allMeta = { ...meta, holdings: { amount0: 0n, amount1: 453_057_429_999_999_450n, principalUsd: 322n * WAD, feesUsd: 0n } };
+      const allMeta = { ...meta, holdings: { liquidity: 1_000n, amount0: 0n, amount1: 453_057_429_999_999_450n, fees0: 0n, fees1: 0n, principalUsd: 322n * WAD, feesUsd: 0n } };
       // ETH/USDG 3,370,167, above its range: all USDG.
-      const allUsdg = { ...eth, holdings: { amount0: 0n, amount1: 199_999_999n, principalUsd: 199n * WAD, feesUsd: 0n } };
+      const allUsdg = { ...eth, holdings: { liquidity: 1_000n, amount0: 0n, amount1: 199_999_999n, fees0: 0n, fees1: 0n, principalUsd: 199n * WAD, feesUsd: 0n } };
 
       expect(describePosition(allMeta).amounts!.base).toBeCloseTo(0.45305743, 12);
       expect(describePosition(allMeta).amounts!.usdg).toBe(0);
@@ -255,6 +256,55 @@ describe("the amounts and the prices of a position, by the side USDG is on", () 
       const lower = { ...meta, asset: USDG.toLowerCase() as `0x${string}` };
 
       expect(describePosition(lower).amounts).toEqual(describePosition(meta).amounts);
+    });
+  });
+});
+
+describe("the fees a position has earned, in its two tokens", () => {
+  // 0.0005 ETH and 1.25 USDG, in a pool where USDG is currency1.
+  const earned = { liquidity: 1_000n, amount0: 2n * 10n ** 17n, amount1: 500_000_000n, fees0: 5n * 10n ** 14n, fees1: 1_250_000n, principalUsd: 1_000n * WAD, feesUsd: 25n * WAD / 10n };
+
+  describe("positive", () => {
+    it("names them as the pair does, the other token first and USDG second", () => {
+      expect(describePosition(collateral({ holdings: earned })).fees).toEqual({ base: 0.0005, usdg: 1.25 });
+      expect(feesInWords({ base: 0.0005, usdg: 1.25 }, "ETH")).toBe("0.0005 ETH and 1.25 USDG");
+    });
+
+    it("tells USDG by its address where it is currency0", () => {
+      const usdgFirst = collateral({
+        poolKey: { currency0: USDG, currency1: "0x00000000000000000000000000000000000000aa", fee: 3000, tickSpacing: 60, hooks: zeroAddress },
+        decimals: [6, 18],
+        holdings: { ...earned, fees0: 1_250_000n, fees1: 5n * 10n ** 14n },
+      });
+
+      expect(describePosition(usdgFirst).fees).toEqual({ base: 0.0005, usdg: 1.25 });
+    });
+  });
+
+  describe("negative", () => {
+    it("has no amounts for a position that could not be valued, and no words for them", () => {
+      const unpriced = collateral({ holdings: null });
+
+      expect(describePosition(unpriced).fees).toBeNull();
+      expect(feesInWords(null, "ETH")).toBeNull();
+    });
+  });
+
+  describe("edge case", () => {
+    it("names the one token there is any of", () => {
+      expect(feesInWords({ base: 0, usdg: 0.5 }, "ETH")).toBe("0.5 USDG");
+      expect(feesInWords({ base: 0.0005, usdg: 0 }, "ETH")).toBe("0.0005 ETH");
+    });
+
+    it("names nothing where both are zero", () => {
+      expect(feesInWords({ base: 0, usdg: 0 }, "ETH")).toBeNull();
+    });
+
+    it("is not the principal: a position holds both and the two are read apart", () => {
+      const described = describePosition(collateral({ holdings: earned }));
+
+      expect(described.amounts).toEqual({ base: 0.2, usdg: 500 });
+      expect(described.fees).toEqual({ base: 0.0005, usdg: 1.25 });
     });
   });
 });

@@ -42,7 +42,9 @@ const TARGETS = {
       // borrower
       "accrue",
       "borrow",
+      "collectFees",
       "debtOf",
+      "decreaseLiquidity",
       "depositCollateralWithPermit",
       "loanOf",
       "repay",
@@ -104,6 +106,8 @@ const ERROR_ARTIFACTS = [
   "PositionValuer.sol/PositionValuer.json",
   "TwapRecorder.sol/TwapRecorder.json",
   "IPositionManager.sol/IPositionManager.json",
+  // PositionManager's check of the minimums a removal of liquidity is sent with.
+  "SlippageCheck.sol/SlippageCheck.json",
   "IERC721Permit_v4.sol/IERC721Permit_v4.json",
   "IUnorderedNonce.sol/IUnorderedNonce.json",
 ];

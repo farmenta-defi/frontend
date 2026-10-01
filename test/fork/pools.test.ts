@@ -1,12 +1,13 @@
-import { maxUint256 } from "viem";
+import { erc20Abi, maxUint256, zeroAddress } from "viem";
 import { describe, expect, it } from "vitest";
 
-import { borrow, depositCollateral, repay, supply, withdrawCollateral } from "@/lib/onchain/actions";
+import { borrow, collectFees, decreaseLiquidity, depositCollateral, repay, supply, withdrawCollateral } from "@/lib/onchain/actions";
 import { describePosition } from "@/lib/onchain/describe";
 import { inPool, type Discovered } from "@/lib/onchain/discovery";
 import { ActionError, explainForPool } from "@/lib/onchain/errors";
-import { borrowGate, depositCollateralGate, repayGate, withdrawCollateralGate } from "@/lib/onchain/gates";
+import { borrowGate, collectFeesGate, depositCollateralGate, repayGate, withdrawCollateralGate } from "@/lib/onchain/gates";
 import { readPool, readPosition, type MarketRefs } from "@/lib/onchain/reads";
+import { DEFAULT_TOLERANCE_BPS, liquidityFor, minimumsFor, readRemoval } from "@/lib/onchain/removal";
 import { COLLATERAL_POOLS, poolById } from "@/lib/markets";
 
 import {
@@ -28,6 +29,7 @@ import {
   givePosition,
   hasAveragePrice,
   isolateEachTest,
+  lowerLiquidationThreshold,
   meme,
   newUser,
   nonceOf,
@@ -208,6 +210,81 @@ describe.each(CASES)("$pool.id, $what", (listed) => {
       expect((await readPosition(publicClient, refs, tokenId, user.address)).place).toBe("wallet");
     });
 
+    it(`${pair}: the fees of a position with a loan are collected to the wallet, and the position stays deposited`, async () => {
+      const { user, refs } = await holder(listed);
+      await depositCollateral(user.clients, refs, tokenId);
+      await borrow(user.clients, refs, tokenId, 50n * USDG);
+      const before = await readPosition(publicClient, refs, tokenId, user.address);
+      expect(before.holdings!.feesUsd).toBeGreaterThan(0n);
+      expect(collectFeesGate(before)).toEqual({ ok: true });
+
+      // The token paired with USDG: native ETH in the ETH pool, an ERC-20 in the other five.
+      const usdgIsCurrency0 = pool.key.currency0.toLowerCase() === USDG_TOKEN.toLowerCase();
+      const base = usdgIsCurrency0 ? pool.key.currency1 : pool.key.currency0;
+      // What the app shows before the fees are collected, in each token.
+      const { fees0, fees1 } = before.holdings!;
+      const shown = usdgIsCurrency0 ? { usdg: fees0, base: fees1 } : { usdg: fees1, base: fees0 };
+      const baseBalance = () =>
+        base === zeroAddress
+          ? publicClient.getBalance({ address: user.address })
+          : publicClient.readContract({ address: base, abi: erc20Abi, functionName: "balanceOf", args: [user.address] });
+      const baseBefore = await baseBalance();
+
+      const receipt = await collectFees(user.clients, refs, tokenId);
+
+      // Native ETH paid for the gas too, so what arrived is the change plus that.
+      const gas = base === zeroAddress ? receipt.gasUsed * receipt.effectiveGasPrice : 0n;
+      const gained = { usdg: (await usdgBalance(user.address)) - 50n * USDG, base: (await baseBalance()) + gas - baseBefore };
+      expect(gained.usdg + gained.base, "nothing arrived").toBeGreaterThan(0n);
+      // To the unit: what arrives is what was shown.
+      expect(gained).toEqual(shown);
+
+      const after = await readPosition(publicClient, refs, tokenId, user.address);
+      expect(after.place).toBe("collateral");
+      expect((await ownerOf(tokenId)).toLowerCase()).toBe(refs.market.toLowerCase());
+      expect(after.holdings).toMatchObject({ fees0: 0n, fees1: 0n, feesUsd: 0n });
+      // The principal is untouched: only the fees left.
+      expect(after.holdings!.amount0).toBe(before.holdings!.amount0);
+      expect(after.holdings!.amount1).toBe(before.holdings!.amount1);
+      expect(after.debt).toBeGreaterThanOrEqual(50n * USDG);
+      expect(after.risk!.healthFactor).toBeGreaterThan(10n ** 18n);
+      expect(collectFeesGate(after)).toMatchObject({ ok: false, code: "NoFees" });
+    });
+
+    it(`${pair}: a quarter of the liquidity of a position with a loan is removed, at the default tolerance`, async () => {
+      const { user, refs } = await holder(listed);
+      await depositCollateral(user.clients, refs, tokenId);
+      await borrow(user.clients, refs, tokenId, 50n * USDG);
+      const before = await readPosition(publicClient, refs, tokenId, user.address);
+      const liquidity = liquidityFor(before.holdings!.liquidity, 25);
+      const { quote, refusal: refused } = await readRemoval(publicClient, refs.market, tokenId, user.address, liquidity);
+      expect(refused).toBeNull();
+
+      const usdgIsCurrency0 = pool.key.currency0.toLowerCase() === USDG_TOKEN.toLowerCase();
+      const base = usdgIsCurrency0 ? pool.key.currency1 : pool.key.currency0;
+      const baseBalance = () =>
+        base === zeroAddress
+          ? publicClient.getBalance({ address: user.address })
+          : publicClient.readContract({ address: base, abi: erc20Abi, functionName: "balanceOf", args: [user.address] });
+      const baseBefore = await baseBalance();
+      // What the panel shows before the removal: the principal the pool quotes and the fees, of each token.
+      const { fees0, fees1 } = before.holdings!;
+      const shown = usdgIsCurrency0
+        ? { usdg: quote.principal0 + fees0, base: quote.principal1 + fees1 }
+        : { usdg: quote.principal1 + fees1, base: quote.principal0 + fees0 };
+
+      const receipt = await decreaseLiquidity(user.clients, refs, tokenId, { liquidity, ...minimumsFor(quote, DEFAULT_TOLERANCE_BPS) });
+
+      const gas = base === zeroAddress ? receipt.gasUsed * receipt.effectiveGasPrice : 0n;
+      const gained = { usdg: (await usdgBalance(user.address)) - 50n * USDG, base: (await baseBalance()) + gas - baseBefore };
+      expect(gained).toEqual(shown);
+
+      const after = await readPosition(publicClient, refs, tokenId, user.address);
+      expect(after.place).toBe("collateral");
+      expect(after.holdings).toMatchObject({ liquidity: before.holdings!.liquidity - liquidity, fees0: 0n, fees1: 0n });
+      expect(after.risk!.healthFactor).toBeGreaterThan(10n ** 18n);
+    });
+
     it(`${pair}: the position is shown by what it holds of each token, and priced in USDG`, async () => {
       const { user, refs } = await holder(listed);
 
@@ -337,6 +414,62 @@ describe("a meme pool while the keeper is quiet", () => {
   });
 });
 
+describe("fees that are what keeps a loan healthy", () => {
+  isolateEachTest();
+  // AI/USDG: the position's fees are about $89 on $1,617 of principal, all of it counted as
+  // collateral, so a loan at the pool's limit leans on them once the threshold is close.
+  const listed = CASES[5];
+  const { pool, tokenId } = listed;
+
+  /** A loan of everything the position can borrow, in a pool whose threshold was then lowered to 31%. */
+  async function loanAtTheEdge() {
+    const { user, refs } = await holder(listed);
+    await depositCollateral(user.clients, refs, tokenId);
+    const { risk } = await readPosition(publicClient, refs, tokenId, user.address);
+    await borrow(user.clients, refs, tokenId, risk!.maxBorrow);
+    await lowerLiquidationThreshold(pool.id, 3100);
+    return { user, refs, borrowed: risk!.maxBorrow };
+  }
+
+  describe("negative", () => {
+    it("cannot be collected: the market refuses in simulation, with a sentence, and nothing is sent", async () => {
+      const { user, refs, borrowed } = await loanAtTheEdge();
+      const state = await readPosition(publicClient, refs, tokenId, user.address);
+      // Healthy as it stands, by less than the fees are worth: 31% over 30% is 1.033.
+      expect(state.pool.terms).toEqual({ maxLtvBps: 3000, ltBps: 3100 });
+      expect(state.risk!.healthFactor).toBeGreaterThan(10n ** 18n);
+      expect(state.risk!.healthFactor).toBeLessThan((104n * 10n ** 18n) / 100n);
+      expect(state.holdings!.feesUsd * 100n).toBeGreaterThan(state.holdings!.principalUsd * 4n);
+      // The gate cannot tell: the contract decides, in the simulation.
+      expect(collectFeesGate(state)).toEqual({ ok: true });
+      const nonce = await nonceOf(user.address);
+      const steps: string[] = [];
+
+      const refused = await refusal(collectFees(user.clients, refs, tokenId, (step) => steps.push(step.name)));
+
+      expect(refused.code).toBe("PositionWouldBeUnhealthy");
+      expect(refused.message).toMatch(/health factor would be below 1.*Repay part of the loan/);
+      expect(steps, "the wallet was asked to confirm").toEqual([]);
+      expect(await nonceOf(user.address), "a transaction was sent").toBe(nonce);
+      expect(await usdgBalance(user.address)).toBe(borrowed);
+      expect((await readPosition(publicClient, refs, tokenId, user.address)).holdings!.feesUsd).toBe(state.holdings!.feesUsd);
+    });
+  });
+
+  describe("positive", () => {
+    it("are collected once enough of the loan is repaid", async () => {
+      const { user, refs, borrowed } = await loanAtTheEdge();
+      await repay(user.clients, refs, tokenId, borrowed / 4n);
+
+      await collectFees(user.clients, refs, tokenId);
+
+      const after = await readPosition(publicClient, refs, tokenId, user.address);
+      expect(after.holdings!.feesUsd).toBe(0n);
+      expect(after.risk!.healthFactor).toBeGreaterThan(10n ** 18n);
+    });
+  });
+});
+
 describe("a stock pool while its price feed is quiet", () => {
   isolateEachTest();
   const { pool, tokenId } = CASES[1];
@@ -388,6 +521,22 @@ describe("a stock pool while its price feed is quiet", () => {
       expect((await refusal(withdrawCollateral(user.clients, refs, tokenId))).code).toBe("OutstandingDebt");
       expect(await nonceOf(user.address), "a transaction was sent").toBe(nonce);
     });
+
+    it("does not pay out the fees of a position with a loan: the market would have to price it", async () => {
+      const { user, refs } = await holder(CASES[1]);
+      await depositCollateral(user.clients, refs, tokenId);
+      await borrow(user.clients, refs, tokenId, 50n * USDG);
+      await quiet();
+
+      const gate = collectFeesGate(await readPosition(publicClient, refs, tokenId, user.address));
+      expect(gate).toMatchObject({ ok: false, code: "StalePrice" });
+      expect(gate.ok === false && explainForPool(gate, page).message).toMatch(/collecting the fees of a position with a loan/);
+      const nonce = await nonceOf(user.address);
+
+      expect((await refusal(collectFees(user.clients, refs, tokenId))).code).toBe("StalePrice");
+      expect(await nonceOf(user.address), "a transaction was sent").toBe(nonce);
+      expect(await usdgBalance(user.address)).toBe(50n * USDG);
+    });
   });
 
   describe("positive", () => {
@@ -410,6 +559,23 @@ describe("a stock pool while its price feed is quiet", () => {
   });
 
   describe("edge case", () => {
+    it("still pays out the fees of a position without a loan, which needs no price", async () => {
+      const { user, refs } = await holder(CASES[1]);
+      await depositCollateral(user.clients, refs, tokenId);
+      const { fees0 } = (await readPosition(publicClient, refs, tokenId, user.address)).holdings!;
+      expect(fees0).toBeGreaterThan(0n);
+      await quiet();
+
+      // The fees cannot be valued any more, and are still there to collect.
+      const state = await readPosition(publicClient, refs, tokenId, user.address);
+      expect(state.holdings).toBeNull();
+      expect(collectFeesGate(state)).toEqual({ ok: true });
+      await collectFees(user.clients, refs, tokenId);
+
+      // USDG is currency0 in META/USDG.
+      expect(await usdgBalance(user.address)).toBe(fees0);
+    });
+
     it("lends against a price that is hours old, as long as it is not older than 25", async () => {
       const { user, refs } = await holder(CASES[1]);
       await depositCollateral(user.clients, refs, tokenId);

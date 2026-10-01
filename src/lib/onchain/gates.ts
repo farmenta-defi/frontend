@@ -5,6 +5,7 @@ import { usdgToNumber } from "@/lib/units";
 import { samePool } from "./contracts";
 import type { Explained } from "./errors";
 import type { LenderState, PositionState } from "./reads";
+import { TOLERANCE_REFUSED_ABOVE_BPS } from "./removal";
 
 /**
  * Whether an action may be offered, decided from state read from the chain.
@@ -143,6 +144,53 @@ export function withdrawCollateralGate(position: PositionState): Gate {
       "OutstandingDebt",
       `This position still owes ${amountOf(position.debt)}. Repay the loan in full, then withdraw the collateral.`,
     );
+  }
+  return OPEN;
+}
+
+/**
+ * Collecting a deposited position's fees. Open while the pool is frozen, shut while the market
+ * is paused (spec §4.1, §6.5). With a loan the market checks the health factor once the fees
+ * have left, at the prices it lends at, so collecting needs a price then; without a loan it
+ * does not. Whether the loan is still healthy without the fees is the contract's to say: the
+ * call is simulated before it is sent.
+ */
+export function collectFeesGate(position: PositionState): Gate {
+  const refused = notCollateral(position);
+  if (refused) return refused;
+  if (position.paused) return PAUSED("collecting fees");
+  if (position.holdings && position.holdings.fees0 === 0n && position.holdings.fees1 === 0n) {
+    return refuse("NoFees", "This position has no fees to collect.");
+  }
+  if (position.debt > 0n && !position.risk) {
+    return refuse(position.riskError?.code ?? "PriceUnavailable", position.riskError?.message ?? "This position cannot be priced right now.");
+  }
+  return OPEN;
+}
+
+/**
+ * Removing part of a deposited position's liquidity, before a quote is asked for. Open while the
+ * pool is frozen, shut while the market is paused. The market values what is left whether or not
+ * there is a loan, to hold it to the pool's minimum, so a removal always needs a price.
+ * `toleranceBps` is `null` when what was typed is not a tolerance. How much may be removed is
+ * the contract's to say, in the simulation the quote is taken with.
+ */
+export function decreaseLiquidityGate(position: PositionState, toleranceBps: number | null): Gate {
+  const refused = notCollateral(position);
+  if (refused) return refused;
+  if (position.paused) return PAUSED("removing liquidity");
+  if (!position.holdings) {
+    return refuse(
+      position.holdingsError?.code ?? "PriceUnavailable",
+      position.holdingsError?.message ?? "This position cannot be priced right now.",
+    );
+  }
+  if (position.debt > 0n && !position.risk) {
+    return refuse(position.riskError?.code ?? "PriceUnavailable", position.riskError?.message ?? "This position cannot be priced right now.");
+  }
+  if (toleranceBps === null) return refuse("NoTolerance", "Enter a slippage tolerance, in percent.");
+  if (toleranceBps > TOLERANCE_REFUSED_ABOVE_BPS) {
+    return refuse("ToleranceTooHigh", "A slippage tolerance above 5% is refused. Enter 5% or less.");
   }
   return OPEN;
 }

@@ -1,5 +1,6 @@
 import { formatUnits } from "viem";
 
+import { fmtAmount } from "@/lib/format";
 import { wadToNumber } from "@/lib/units";
 
 import { feeLabel, priceRange, rangeLabel } from "./range";
@@ -32,20 +33,46 @@ export type PositionDescription = {
    * valued, or when neither currency is USDG.
    */
   amounts: { base: number; usdg: number } | null;
+  /**
+   * The uncollected fees in whole tokens, split the same way: what collecting
+   * them pays out. Absent where `amounts` is.
+   */
+  fees: { base: number; usdg: number } | null;
 };
 
-/** The pool's two amounts as the pair names them: the other token first, USDG second. */
-function amountsOf(position: PositionState): PositionDescription["amounts"] {
-  const { poolKey, holdings, decimals } = position;
-  if (!poolKey || !holdings || !decimals) return null;
+/**
+ * An amount of each of the pool's currencies, in whole tokens and as the pair
+ * names them: the other token first, USDG second. `null` when the position's
+ * pool is not known or neither currency is USDG.
+ */
+export function inPairOrder(
+  position: Pick<PositionState, "poolKey" | "decimals" | "asset">,
+  of0: bigint,
+  of1: bigint,
+): { base: number; usdg: number } | null {
+  const { poolKey, decimals } = position;
+  if (!poolKey || !decimals) return null;
 
   const usdg = position.asset.toLowerCase();
   const usdgIsCurrency0 = poolKey.currency0.toLowerCase() === usdg;
   if (!usdgIsCurrency0 && poolKey.currency1.toLowerCase() !== usdg) return null;
 
-  const amount0 = Number(formatUnits(holdings.amount0, decimals[0]));
-  const amount1 = Number(formatUnits(holdings.amount1, decimals[1]));
+  const amount0 = Number(formatUnits(of0, decimals[0]));
+  const amount1 = Number(formatUnits(of1, decimals[1]));
   return usdgIsCurrency0 ? { base: amount1, usdg: amount0 } : { base: amount0, usdg: amount1 };
+}
+
+/**
+ * The fees as the button that collects them names them: "0.0005 ETH and 1.29 USDG", or the
+ * one token there is any of. `null` where there is nothing to name.
+ */
+export function feesInWords(fees: PositionDescription["fees"], baseSymbol: string): string | null {
+  if (!fees) return null;
+  const parts = [
+    fees.base > 0 ? `${fmtAmount(fees.base)} ${baseSymbol}` : null,
+    fees.usdg > 0 ? `${fmtAmount(fees.usdg)} USDG` : null,
+  ].filter((part) => part !== null);
+  return parts.length > 0 ? parts.join(" and ") : null;
 }
 
 export function describePosition(position: PositionState): PositionDescription {
@@ -74,6 +101,7 @@ export function describePosition(position: PositionState): PositionDescription {
     inRange,
     valueUsd,
     feesUsd: position.holdings ? wadToNumber(position.holdings.feesUsd) : null,
-    amounts: amountsOf(position),
+    amounts: position.holdings ? inPairOrder(position, position.holdings.amount0, position.holdings.amount1) : null,
+    fees: position.holdings ? inPairOrder(position, position.holdings.fees0, position.holdings.fees1) : null,
   };
 }

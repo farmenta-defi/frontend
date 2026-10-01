@@ -81,7 +81,9 @@ first, from `GET /activity/:address`.
 - **Every row the backend sends is listed.** It sends what the wallet supplied and withdrew as a
   lender, shares it sent to another wallet, and what happened to the positions it borrowed
   against: collateral in and out, loans, repayments, changes of liquidity, fees collected, and
-  liquidations. A kind the app has no name for is listed as "Other", with its date and its
+  liquidations. A change of liquidity pays the position's fees out in the same
+  transaction, and the two logs are one row: "Remove liquidity", with "Fees collected with it"
+  under it. A kind the app has no name for is listed as "Other", with its date and its
   transaction. The menu above the table narrows the rows on screen; it asks the backend nothing.
 - **The amount is the USDG that moved**, to its last decimal: supplied, withdrawn, borrowed,
   repaid, or repaid by a liquidator. A row that moves no USDG has a dash.
@@ -117,8 +119,9 @@ wallet, newest first, from `GET /pools/:poolId/activity`.
 
 ## On-chain actions
 
-The app sends six transactions: supply and withdraw USDG, deposit collateral (with a permit),
-borrow, repay, and withdraw collateral. They live in `src/lib/onchain/`.
+The app sends eight transactions: supply and withdraw USDG, deposit collateral (with a permit),
+borrow, repay, withdraw collateral, and for a deposited position collect its fees and remove part
+of its liquidity. They live in `src/lib/onchain/`.
 
 - **Addresses** come from the address manifest, `deployments/<name>.json`, chosen with
   `NEXT_PUBLIC_FARMENTA_DEPLOYMENT` (see `deployments/README.md`). No Farmenta address is written
@@ -135,6 +138,42 @@ borrow, repay, and withdraw collateral. They live in `src/lib/onchain/`.
   pool's price itself at the start of a deposit and of a loan. When a read finds no average price
   because the keeper has been quiet, it is taken again after `PriceOracle.record`, inside one
   `eth_call`. Nothing is sent.
+- **A deposited position's fees are collected with `collectFees`, to the connected wallet**
+  (the fee half of FAR-73). The market holds the NFT, so Uniswap's own page cannot collect them.
+  Both tokens arrive, USDG first, and the position stays deposited; no other recipient is
+  offered. "Collect fees" on the position's row in Portfolio opens a panel, and the pool's page
+  has the button under its action rail. In both, the button names what it pays out in each
+  token, read from `PositionValuer.value(tokenId)` at that moment ("Collect 0.0005439 ETH and
+  1.1277 USDG"); the ETH pool pays native ETH. For a position with a loan a sentence beside
+  it says that the market counts the fees as collateral and that collecting them lowers the
+  health factor. The button is left out while the position has no fees in either token. A
+  frozen pool does not stop it; a paused market does. With a loan the market checks the health
+  factor once the fees have left, at the prices it lends at, so a loan that cannot be priced
+  cannot collect either, and one that would end under 1 is refused in the simulation with a
+  sentence. Without a loan no price is needed.
+- **Part of a deposited position's liquidity is removed with `decreaseLiquidity`** (the other
+  half of FAR-73), from "Remove liquidity" on the position's row in Portfolio. The share is 25%,
+  50% or 75% of the position's liquidity. The whole of it is not offered: what stays has to be
+  worth the pool's minimum, and a position leaves whole through a repayment and "Withdraw
+  collateral". The panel shows, for each token, the principal the pool pays now, the fees that
+  leave with it, and the least principal the transaction accepts.
+- **The quote of a removal is the chain's.** The call is simulated with a minimum nothing can
+  meet, and PositionManager's refusal carries the principal it would have paid, fees apart
+  (`MinimumAmountInsufficient`). `PositionValuer.value` is not used for it: it splits a
+  position at the oracle's price, and the pool pays at its own. Measured on the fork, a
+  quarter of each blue-chip position differed from the valuer's split by 0.8% to 1.4% in a
+  token, more than the tolerance. The quote is read again every 15 seconds.
+- **The minimums are the quote less the slippage tolerance, rounded down, of the principal
+  alone.** 0.5% of each token unless the user changes it; above 1% the panel warns, above 5% it
+  refuses (spec §12, the rule for adding liquidity, taken for removing it: decided by the
+  product owner, 1 Oct 2026). The simulation that runs before the wallet is asked is the price
+  read again. A price that moved past the minimums sends nothing, and the panel offers "Get a
+  new quote"; the tolerance stays as it was set.
+- **A removal is refused with what to do about it** when the loan would not fit what is left
+  ("Remove less, or repay until the loan fits") and when too little would be left ("repay the
+  loan and withdraw the collateral"). A removal always needs a price, loan or no loan: the
+  market values what is left against the pool's minimum. A paused market stops it and a frozen
+  pool does not.
 - **Every transaction is simulated first.** A simulation that reverts sends nothing, and the
   contract's error is shown as a sentence (`src/lib/onchain/errors.ts`).
 - **Approvals are for the amount being moved**, never unlimited.
@@ -216,7 +255,7 @@ Four rules the pages keep:
 - `src/lib/deployment.ts`: the address manifest
 - `src/lib/units.ts`: USDG (6 decimals), USD (1e18) and bps conversions, shared with the data layer
 - `src/lib/query-keys.ts`: query keys for the backend and the chain, and what a transaction invalidates
-- `src/lib/onchain/`: reads, gates, the six actions, the permit, error messages, and the hooks
+- `src/lib/onchain/`: reads, gates, the eight actions, the quote of a removal of liquidity, the permit, error messages, and the hooks
 - `src/components/ui/`: primitives (button, badge, field, health bar, logo, tabs, segmented control, select menu, asset and address marks)
 - `src/components/site/`: nav, wallet button, app shell, page header
 - `src/components/landing/`: the hero for `/`, which is a single screen with nothing under it
@@ -232,7 +271,7 @@ Four rules the pages keep:
 - The Portfolio page shows the connected wallet, its deposit in each market, and the loans on the positions this browser knows for it, all read from the chain and pinned to `chainId: 4663`: the same reads the Repay and Withdraw buttons are decided on, so a figure and the action under it never disagree. Two things on it are the backend's: the Activity tab, from the activity route, and Net APY, which is the supply APY of the market for a wallet with a deposit there and zero for a wallet without.
 - A position shows its uncollected fees in full, beside its value. On collateral the two differ: the market lends against fees only up to a tenth of the principal (spec §6.2).
 - The balance over time beside a deposit is a level line: the backend has no route for a wallet's balance history.
-- **A market can be held closed in the app** (`CLOSED_MARKETS` in `src/lib/markets.ts`). Its pools stay in the directory with a "Temporarily closed" badge, turn red under the pointer, and do not open from there. A pool's page, which its address still reaches, carries the same badge, and its action rail refuses supplying, depositing a position and borrowing with that label on the button; withdrawing, repaying and taking collateral back stay open. The app gives the label and no further reason (decided by the product owner, 1 Oct 2026). Nothing is paused or frozen on the chain: this is the app's switch only. The Meme market is closed this way since 1 Oct 2026, because the `TwapRecorder` deployed that day holds no recordings yet and the oracle prices a meme pool from 30 minutes of them. Removing the `meme` entry opens it again.
+- **A market can be held closed in the app** (`CLOSED_MARKETS` in `src/lib/markets.ts`). Its pools stay in the directory with a "Temporarily closed" badge, turn red under the pointer, and do not open from there. A pool's page, which its address still reaches, carries the same badge, and its action rail refuses supplying, depositing a position and borrowing with that label on the button; withdrawing, repaying, taking collateral back, collecting a position's fees and removing its liquidity stay open. The app gives the label and no further reason (decided by the product owner, 1 Oct 2026). Nothing is paused or frozen on the chain: this is the app's switch only. The Meme market is closed this way since 1 Oct 2026, because the `TwapRecorder` deployed that day holds no recordings yet and the oracle prices a meme pool from 30 minutes of them. Removing the `meme` entry opens it again.
 - The Market and Rates charts on a pool's page are the history of the pool's market: lenders supply to the market, and every pool in it borrows from the same USDG at the same rate.
 - Some ISPs DNS-hijack `rpc.mainnet.chain.robinhood.com`; set `NEXT_PUBLIC_RPC_URL` to a provider endpoint (Alchemy free tier) if reads fail.
 - `src/app/icon.png` and `apple-icon.png` are generated from the logo; regenerate them if the logo changes.

@@ -3,7 +3,10 @@ import {
   createWalletClient,
   encodeAbiParameters,
   erc20Abi,
+  hexToBigInt,
   http,
+  keccak256,
+  numberToHex,
   parseAbi,
   parseEther,
   publicActions,
@@ -50,11 +53,18 @@ export function harnessOn(url: string, manifestText: string) {
     "function getPositionLiquidity(uint256 tokenId) view returns (uint128)",
     "function getPoolAndPositionInfo(uint256 tokenId) view returns ((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) key, uint256 info)",
     "function modifyLiquidities(bytes unlockData, uint256 deadline) payable",
+    "function poolManager() view returns (address)",
   ]);
   const ownerActions = parseAbi([
     "function owner() view returns (address)",
     "function pause()",
     "function setFrozen(bytes32 poolId, bool frozen)",
+  ]);
+  const terms = parseAbi([
+    "struct Listing { bool listed; bool frozen; uint8 tier; uint16 maxLtvBps; uint16 ltStartBps; uint16 ltTargetBps; uint40 rampStart; uint40 rampDuration; uint16 liquidatorBonusBps; uint16 removeHaircutBps; uint128 debtCapUsdg; uint128 minPositionUsd; }",
+    "struct ListingParams { uint16 maxLtvBps; uint16 ltBps; uint16 liquidatorBonusBps; uint16 removeHaircutBps; uint128 debtCapUsdg; uint128 minPositionUsd; }",
+    "function listingOf(bytes32 poolId) view returns (Listing)",
+    "function updateTerms(bytes32 poolId, ListingParams params)",
   ]);
   const recorder = parseAbi([
     "function record((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) key)",
@@ -216,6 +226,57 @@ export function harnessOn(url: string, manifestText: string) {
     });
   }
 
+  /**
+   * Rewrites some of a pool's terms as the policy's owner, impersonated, leaving the others as
+   * they are. It takes effect at once for the loans there are (spec §6.5).
+   */
+  async function updateTerms(poolId: Hex, change: { ltBps?: number; minPositionUsd?: bigint }) {
+    const policy = deployment.collateralPolicy;
+    const [owner, listing] = await Promise.all([
+      publicClient.readContract({ address: policy, abi: ownerActions, functionName: "owner" }),
+      publicClient.readContract({ address: policy, abi: terms, functionName: "listingOf", args: [poolId] }),
+    ]);
+    const { maxLtvBps, ltTargetBps, liquidatorBonusBps, removeHaircutBps, debtCapUsdg, minPositionUsd } = listing;
+    const params = { maxLtvBps, ltBps: ltTargetBps, liquidatorBonusBps, removeHaircutBps, debtCapUsdg, minPositionUsd, ...change };
+    await as(owner, async () => {
+      await mined(
+        await anvil.writeContract({ account: owner, address: policy, abi: terms, functionName: "updateTerms", args: [poolId, params] }),
+      );
+    });
+  }
+
+  /** Lowers a pool's liquidation threshold. */
+  const lowerLiquidationThreshold = (poolId: Hex, ltBps: number) => updateTerms(poolId, { ltBps });
+
+  /**
+   * Moves a pool's price by `ticks` (one tick is 0.01%) without a swap: the pool's `slot0` in
+   * PoolManager is rewritten with the price and the tick that far on. What a position is worth
+   * in each token follows, which is all the tests ask of it; the liquidity in range is left as
+   * it was, so this is not a price a swap would have reached through other positions' ticks.
+   *
+   * `slot0` is the first word of `pools[poolId]`, and `pools` is PoolManager's slot 6
+   * (`StateLibrary.POOLS_SLOT`). The price is its low 160 bits and the tick the 24 above them.
+   */
+  async function movePoolPrice(poolId: Hex, ticks: number) {
+    const poolManager = await publicClient.readContract({ address: POSITION_MANAGER, abi: nft, functionName: "poolManager" });
+    const slot = keccak256(encodeAbiParameters([{ type: "bytes32" }, { type: "uint256" }], [poolId, 6n]));
+    const word = hexToBigInt((await publicClient.getStorageAt({ address: poolManager, slot }))!);
+
+    const PRICE = (1n << 160n) - 1n;
+    const TICK = (1n << 24n) - 1n;
+    const sqrtPriceX96 = word & PRICE;
+    const tick = BigInt.asIntN(24, (word >> 160n) & TICK);
+    if (sqrtPriceX96 === 0n) throw new Error(`harness: pool ${poolId} has no price in PoolManager's slot ${slot}`);
+
+    // sqrt(1.0001^ticks), to twelve digits.
+    const factor = BigInt(Math.round(1.0001 ** (ticks / 2) * 1e12));
+    const moved = (sqrtPriceX96 * factor) / 10n ** 12n;
+    const rest = word & ~(PRICE | (TICK << 160n));
+    const value = rest | (BigInt.asUintN(24, tick + BigInt(ticks)) << 160n) | moved;
+    await anvil.setStorageAt({ address: poolManager, index: slot, value: numberToHex(value, { size: 32 }) });
+    await anvil.mine({ blocks: 1 });
+  }
+
   /** Records a pool's price in `TwapRecorder`, as the keeper does every five minutes. Anyone may. */
   async function recordPrice(key: PoolKey) {
     const keeper = await newUser("price-recorder");
@@ -273,6 +334,9 @@ export function harnessOn(url: string, manifestText: string) {
     emptyPosition,
     pause,
     freeze,
+    lowerLiquidationThreshold,
+    updateTerms,
+    movePoolPrice,
     recordPrice,
     hasAveragePrice,
     wait,
@@ -302,6 +366,9 @@ export const {
   emptyPosition,
   pause,
   freeze,
+  lowerLiquidationThreshold,
+  updateTerms,
+  movePoolPrice,
   recordPrice,
   hasAveragePrice,
   wait,

@@ -43,10 +43,12 @@ type Args = readonly unknown[];
  * the contract reverts with: `BorrowExceedsMaxLtv` carries USD (1e18), the
  * debt caps carry USDG (6 decimals).
  */
-const MESSAGES: Record<string, (args: Args) => string> = {
+type Messages = Record<string, (args: Args) => string>;
+
+const MESSAGES: Messages = {
   // market state
   EnforcedPause: () =>
-    "The market is paused. Supplying, depositing collateral and borrowing are stopped; repaying and withdrawing still work.",
+    "The market is paused. Supplying, depositing collateral, borrowing, collecting fees and removing liquidity are stopped; repaying and withdrawing still work.",
   PoolFrozenForNewPositions: () =>
     "This pool is frozen: it takes no new collateral. Positions already deposited can still be repaid and withdrawn.",
   PoolNotOpenForBorrowing: () =>
@@ -87,9 +89,19 @@ const MESSAGES: Record<string, (args: Args) => string> = {
     `This position is worth ${usd(principal)} after the pool's haircut, below the ${usd(minimum)} minimum for collateral.`,
   PositionIsEmpty: () => "This position holds no liquidity, so it cannot be collateral.",
   PositionAlreadyHeld: () => "This position is already deposited.",
-  NotTheDepositor: () => "Only the wallet that deposited this position can withdraw it.",
-  InvalidRecipient: () => "That address cannot receive the position.",
+  NotTheDepositor: () => "Only the wallet that deposited this position can withdraw it or collect its fees.",
+  InvalidRecipient: () => "That address cannot receive the position or its fees.",
+  PositionWouldBeUnhealthy: () =>
+    "The market counts these fees as collateral, and without them the loan's health factor would be below 1. Repay part of the loan, then collect the fees.",
   InvalidBorrowRecipient: () => "That address cannot receive the loan.",
+
+  // removing liquidity
+  RemovalExceedsBorrowLimit: ([, debt, limit]) =>
+    `What would be left can carry a loan of ${usd(limit)}, and this one is ${usd(debt)}. Remove less, or repay until the loan fits.`,
+  LiquidityExceedsPosition: () => "The position holds less liquidity than that. Reload the page and try again.",
+  ZeroLiquidity: () => "Choose how much of the liquidity to remove.",
+  MinimumAmountInsufficient: () =>
+    "The pool's price moved, and the removal would now pay less than the minimum it was quoted with. Get a new quote and try again.",
 
   // vault
   ERC4626ExceededMaxWithdraw: ([, assets, max]) =>
@@ -99,12 +111,24 @@ const MESSAGES: Record<string, (args: Args) => string> = {
   ERC20InsufficientAllowance: () => "The approved amount is lower than the amount being moved. Approve again and resubmit.",
 };
 
-function fromRevert(name: string, args: Args | undefined): Explained {
+/**
+ * The errors that read differently when they come from a removal of liquidity.
+ * `PositionBelowMinimum` is about a position being deposited everywhere else;
+ * here it is about what the removal would leave.
+ */
+const REMOVAL_MESSAGES: Messages = {
+  PositionBelowMinimum: ([left, minimum]) =>
+    `What would be left is worth ${usd(left)} after the pool's haircut, below the pool's ${usd(minimum)} minimum. Remove less. To take the whole position out, repay the loan and withdraw the collateral.`,
+  NotTheDepositor: () => "Only the wallet that deposited this position can remove its liquidity.",
+  InvalidRecipient: () => "That address cannot receive the liquidity.",
+};
+
+function fromRevert(name: string, args: Args | undefined, overrides?: Messages): Explained {
   if (name === "Error" || name === "Panic") {
     const reason = String(args?.[0] ?? "");
     return { code: name, message: reason ? `The transaction would fail: ${reason}.` : "The transaction would fail." };
   }
-  const message = MESSAGES[name];
+  const message = overrides?.[name] ?? MESSAGES[name];
   return {
     code: name,
     message: message ? message(args ?? []) : `The transaction would fail (${name}).`,
@@ -146,14 +170,17 @@ export function explainForPool(explained: Explained, pool: PoolInWords | null | 
   if (explained.code === "StalePrice" && pool.feedHours === "us-stock-market") {
     return {
       code: explained.code,
-      message: `${pool.base.symbol}'s price feed follows the US stock market, and its last price is more than 25 hours old: the stock market is closed, as it is every weekend. Borrowing, depositing, and withdrawing collateral that still has a loan against it open again when the stock market does. Repaying works at any time.`,
+      message: `${pool.base.symbol}'s price feed follows the US stock market, and its last price is more than 25 hours old: the stock market is closed, as it is every weekend. Borrowing, depositing, withdrawing collateral that still has a loan against it, and collecting the fees of a position with a loan open again when the stock market does. Repaying works at any time.`,
     };
   }
   return explained;
 }
 
+/** `explainError` for a removal of liquidity: the same errors, in the words of a removal where they differ. */
+export const explainRemovalError = (error: unknown) => explainError(error, REMOVAL_MESSAGES);
+
 /** Turns anything a simulation, a signature request or a send can throw into an `Explained`. */
-export function explainError(error: unknown): Explained {
+export function explainError(error: unknown, overrides?: Messages): Explained {
   if (error instanceof ActionError) return { code: error.code, message: error.message };
   if (!(error instanceof BaseError)) {
     return { code: "Unknown", message: error instanceof Error ? error.message : "Something went wrong." };
@@ -168,12 +195,12 @@ export function explainError(error: unknown): Explained {
 
   const revert = error.walk((cause) => cause instanceof ContractFunctionRevertedError);
   if (revert instanceof ContractFunctionRevertedError) {
-    if (revert.data) return fromRevert(revert.data.errorName, revert.data.args);
+    if (revert.data) return fromRevert(revert.data.errorName, revert.data.args, overrides);
     // The call's ABI did not know the selector. Every Farmenta error is in this one.
     if (revert.raw && revert.raw !== "0x") {
       try {
         const decoded = decodeErrorResult({ abi: farmentaErrorsAbi, data: revert.raw as Hex });
-        return fromRevert(decoded.errorName, decoded.args as Args | undefined);
+        return fromRevert(decoded.errorName, decoded.args as Args | undefined, overrides);
       } catch {
         return { code: "UnknownRevert", message: `The transaction would fail (${revert.signature ?? revert.raw.slice(0, 10)}).` };
       }

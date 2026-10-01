@@ -3,14 +3,15 @@ import { erc20Abi, maxUint256, type Abi, type Address, type Hex, type Transactio
 import { chain } from "@/lib/chain";
 
 import { marketAbi } from "./contracts";
-import { ActionError, toActionError } from "./errors";
+import { ActionError, explainRemovalError, toActionError } from "./errors";
 import { depositCollateralGate, repayGate, supplyGate, type Gate } from "./gates";
 import { signCollateralPermit } from "./permit";
 import { readLenderState, readPosition, type Clients, type MarketRefs } from "./reads";
 
 /**
- * The six transactions a user sends (FAR-72): supply and withdraw USDG,
- * deposit collateral, borrow, repay, withdraw collateral.
+ * The eight transactions a user sends: supply and withdraw USDG, deposit
+ * collateral, borrow, repay, withdraw collateral (FAR-72), and collect a
+ * deposited position's fees and remove part of its liquidity (FAR-73).
  *
  * Every one is simulated first. A simulation that reverts sends nothing and
  * throws an `ActionError` carrying the contract's error name and a sentence.
@@ -25,7 +26,17 @@ import { readLenderState, readPosition, type Clients, type MarketRefs } from "./
  */
 export type Step = {
   /** Which transaction of the action this is. */
-  name: "approve" | "supply" | "withdraw" | "permit" | "depositCollateral" | "borrow" | "repay" | "withdrawCollateral";
+  name:
+    | "approve"
+    | "supply"
+    | "withdraw"
+    | "permit"
+    | "depositCollateral"
+    | "borrow"
+    | "repay"
+    | "withdrawCollateral"
+    | "collectFees"
+    | "decreaseLiquidity";
   /** `sign`: waiting on the wallet. `confirm`: sent, waiting for the receipt. */
   phase: "sign" | "confirm";
   hash?: Hex;
@@ -242,6 +253,57 @@ export function withdrawCollateral(clients: Clients, { market }: MarketRefs, tok
     { address: market, abi: marketAbi, functionName: "withdrawCollateral", args: [tokenId, account] },
     onStep,
   );
+}
+
+/**
+ * Borrower: `collectFees(tokenId, to)`, paid to the sender. Both tokens of the
+ * pool arrive, USDG first; in the ETH pool the other one is native ETH. The
+ * position stays deposited. With a loan the market reverts a call that would
+ * leave the health factor under 1.
+ */
+export function collectFees(clients: Clients, { market }: MarketRefs, tokenId: bigint, onStep?: Progress) {
+  const account = clients.walletClient.account.address;
+  return send(
+    clients,
+    "collectFees",
+    { address: market, abi: marketAbi, functionName: "collectFees", args: [tokenId, account] },
+    onStep,
+  );
+}
+
+/**
+ * Borrower: `decreaseLiquidity(tokenId, liquidity, min0, min1, to)`, paid to
+ * the sender: the principal of that liquidity and every fee the position has
+ * earned. `min0` and `min1` are the least principal accepted of each token,
+ * from the quote the user was shown (`minimumsFor`); the simulation that runs
+ * before the wallet is asked is the price read again, and a price that moved
+ * past them sends nothing.
+ */
+export async function decreaseLiquidity(
+  clients: Clients,
+  { market }: MarketRefs,
+  tokenId: bigint,
+  removal: { liquidity: bigint; min0: bigint; min1: bigint },
+  onStep?: Progress,
+) {
+  const account = clients.walletClient.account.address;
+  try {
+    return await send(
+      clients,
+      "decreaseLiquidity",
+      {
+        address: market,
+        abi: marketAbi,
+        functionName: "decreaseLiquidity",
+        args: [tokenId, removal.liquidity, removal.min0, removal.min1, account],
+      },
+      onStep,
+    );
+  } catch (error) {
+    // In the words of a removal, where the contract's error reads differently for one.
+    const cause = error instanceof ActionError && error.cause ? error.cause : error;
+    throw cause instanceof ActionError ? cause : new ActionError(explainRemovalError(cause), { cause });
+  }
 }
 
 export type { TransactionReceipt };

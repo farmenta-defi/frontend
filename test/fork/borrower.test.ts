@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   borrow,
+  collectFees,
   depositCollateral,
   repay,
   repayAllowance,
@@ -12,6 +13,7 @@ import {
 import { ActionError } from "@/lib/onchain/errors";
 import {
   borrowGate,
+  collectFeesGate,
   depositCollateralGate,
   repayGate,
   withdrawCollateralGate,
@@ -62,7 +64,7 @@ async function borrowerWith(tokenId: bigint, label = "borrower") {
 }
 
 /** A borrower whose `tokenId` is deposited, in a market with cash. */
-async function depositedBorrower(tokenId = TOKEN) {
+async function depositedBorrower(tokenId: bigint = TOKEN) {
   await fundMarket();
   const user = await borrowerWith(tokenId);
   await depositCollateral(user.clients, blueChip, tokenId);
@@ -403,6 +405,85 @@ describe("repay and withdraw collateral", () => {
 
       expect(await debtOf(market, TOKEN)).toBe(0n);
       expect(await usdgBalance(user.address)).toBeGreaterThan(399n * USDG);
+    });
+  });
+});
+
+describe("collect fees", () => {
+  isolateEachTest();
+
+  describe("positive", () => {
+    it("pays the USDG and the ETH a position has earned to its depositor, in one transaction", async () => {
+      const user = await depositedBorrower();
+      const before = await position(TOKEN, user.address);
+      expect(before.holdings!.feesUsd).toBeGreaterThan(0n);
+      expect(collectFeesGate(before)).toEqual({ ok: true });
+      const eth = await publicClient.getBalance({ address: user.address });
+      const nonce = await nonceOf(user.address);
+      const steps: string[] = [];
+
+      const receipt = await collectFees(user.clients, blueChip, TOKEN, (step) => steps.push(`${step.name}:${step.phase}`));
+
+      expect(steps).toEqual(["collectFees:sign", "collectFees:confirm"]);
+      expect(await nonceOf(user.address)).toBe(nonce + 1);
+      // ETH/USDG pairs native ETH as currency0 with USDG as currency1. Both arrive, to the unit
+      // of what was shown before; the wallet paid the gas out of the same ETH.
+      const { fees0, fees1 } = before.holdings!;
+      expect(fees0).toBeGreaterThan(0n);
+      expect(fees1).toBeGreaterThan(0n);
+      expect(await usdgBalance(user.address)).toBe(fees1);
+      const gas = receipt.gasUsed * receipt.effectiveGasPrice;
+      expect((await publicClient.getBalance({ address: user.address })) + gas - eth).toBe(fees0);
+
+      const after = await position(TOKEN, user.address);
+      expect(after.place).toBe("collateral");
+      expect(after.holdings).toMatchObject({ fees0: 0n, fees1: 0n, feesUsd: 0n });
+      expect(after.holdings!.principalUsd).toBe(before.holdings!.principalUsd);
+    });
+  });
+
+  describe("negative", () => {
+    it("refuses someone collecting the fees of a position that is not theirs", async () => {
+      await depositedBorrower();
+      const stranger = await newUser("stranger");
+      expect(collectFeesGate(await position(TOKEN, stranger.address))).toMatchObject({
+        ok: false,
+        code: "NotTheDepositor",
+      });
+      const nonce = await nonceOf(stranger.address);
+
+      expect((await refusal(collectFees(stranger.clients, blueChip, TOKEN))).code).toBe("NotTheDepositor");
+
+      expect(await nonceOf(stranger.address), "a transaction was sent").toBe(nonce);
+      expect(await usdgBalance(stranger.address)).toBe(0n);
+    });
+
+    it("is not offered for a position still in the wallet, which the market does not hold", async () => {
+      const user = await borrowerWith(TOKEN);
+
+      expect(collectFeesGate(await position(TOKEN, user.address))).toMatchObject({ ok: false, code: "NotTheDepositor" });
+      expect((await refusal(collectFees(user.clients, blueChip, TOKEN))).code).toBe("NotTheDepositor");
+    });
+  });
+
+  describe("edge case", () => {
+    it("has nothing to collect on a position that has earned no fees", async () => {
+      const user = await depositedBorrower(POSITIONS.metaUsdgAllMeta);
+      const state = await position(POSITIONS.metaUsdgAllMeta, user.address);
+
+      expect(state.holdings).toMatchObject({ fees0: 0n, fees1: 0n, feesUsd: 0n });
+      expect(collectFeesGate(state)).toMatchObject({ ok: false, code: "NoFees" });
+    });
+
+    it("a second collection right away pays nothing and does no harm", async () => {
+      const user = await depositedBorrower();
+      await collectFees(user.clients, blueChip, TOKEN);
+      const usdg = await usdgBalance(user.address);
+
+      await collectFees(user.clients, blueChip, TOKEN);
+
+      expect(await usdgBalance(user.address)).toBe(usdg);
+      expect((await position(TOKEN, user.address)).place).toBe("collateral");
     });
   });
 });
