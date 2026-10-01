@@ -36,6 +36,7 @@ const BLOCKED: Record<string, string> = {
   PoolNotListed: "Pool not listed",
   OutstandingDebt: "Repay the loan first",
   NoDebt: "Nothing to repay",
+  NoFees: "No fees to collect",
   StalePrice: "Price unavailable",
   InvalidPrice: "Price unavailable",
   MemeTwapUnavailable: "Price unavailable",
@@ -55,7 +56,15 @@ const STEP: Record<Step["name"], Record<Step["phase"], string>> = {
     sign: "Confirm the withdrawal in your wallet.",
     confirm: "Waiting for the withdrawal to confirm.",
   },
+  collectFees: { sign: "Confirm the collection in your wallet.", confirm: "Waiting for the collection to confirm." },
 };
+
+/**
+ * Said before fees are collected from a position with a loan (FAR-73): the
+ * market lends against them, so taking them out lowers the health factor.
+ */
+export const FEES_ARE_COLLATERAL =
+  "The market counts these fees as collateral, up to a tenth of the principal. Collecting them lowers this loan's health factor.";
 
 /** Big figure, then the two footnotes under it: value left, the limit and MAX right. */
 export function AmountField({

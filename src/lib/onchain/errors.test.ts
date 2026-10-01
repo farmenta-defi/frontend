@@ -32,7 +32,7 @@ describe("explainError", () => {
   describe("positive", () => {
     it("names every error FAR-72 lists and says what to do about it", () => {
       const cases: [string, readonly unknown[], RegExp][] = [
-        ["EnforcedPause", [], /paused/],
+        ["EnforcedPause", [], /paused.*collecting fees are stopped/],
         ["PoolFrozenForNewPositions", [POOL], /frozen.*no new collateral/],
         ["PoolNotOpenForBorrowing", [POOL], /frozen.*no new loans/],
         ["BorrowExceedsMaxLtv", [700n * 10n ** 18n, 650n * 10n ** 18n], /\$700.*\$650/],
@@ -41,6 +41,7 @@ describe("explainError", () => {
         ["UsdgPriceOutOfBounds", [960_000_000_000_000_000n], /\$0\.96/],
         ["StalePrice", [zeroAddress, 1_700_000_000n], /price feed/],
         ["OutstandingDebt", [123n, 5n], /Repay the loan in full/],
+        ["PositionWouldBeUnhealthy", [123n, 990_000_000_000_000_000n], /health factor would be below 1.*Repay part of the loan, then collect/],
         ["PermitRejected", [123n], /signature/i],
         ["PositionBelowMinimum", [4n * 10n ** 18n, 5n * 10n ** 18n], /\$4.*\$5/],
         ["ERC4626ExceededMaxWithdraw", [zeroAddress, 200_000_000n, 150_000_000n], /up to 150 USDG.*200 USDG/],
@@ -160,6 +161,7 @@ describe("explainForPool", () => {
       expect(explained.message).toMatch(/NVDA/);
       expect(explained.message).toMatch(/stock market is closed/);
       expect(explained.message).toMatch(/open again when the stock market does/);
+      expect(explained.message).toMatch(/collecting the fees of a position with a loan/);
       expect(explained.message).toMatch(/Repaying works at any time/);
     });
 

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ACCRUAL_GAS,
   borrow,
+  collectFees,
   depositCollateral,
   gasLimitFor,
   repay,
@@ -178,6 +179,7 @@ describe("the gas limit, when the estimate was taken in the second of an accrual
         ["withdraw", lender.clients, (clients) => withdraw(clients, blueChip, 200n * USDG)],
         ["borrow", borrower.clients, (clients) => borrow(clients, blueChip, LOAN, 50n * USDG)],
         // Before the repayment: with no loan left in the market an accrual has nothing to write.
+        ["collectFees", borrower.clients, (clients) => collectFees(clients, blueChip, LOAN)],
         ["withdrawCollateral", borrower.clients, (clients) => withdrawCollateral(clients, blueChip, SPARE)],
         ["repay", borrower.clients, (clients) => repay(clients, blueChip, LOAN, "max")],
       ];

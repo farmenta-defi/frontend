@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
-import { ActionButton, ActionNote } from "@/components/app/action-controls";
+import { ActionButton, ActionNote, FEES_ARE_COLLATERAL } from "@/components/app/action-controls";
 import { HoldingsLine, RangeLine } from "@/components/app/position-picker";
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { Badge } from "@/components/ui/badge";
@@ -12,12 +12,12 @@ import { sanitizeAmount } from "@/components/ui/field";
 import { hfLabel, hfTone } from "@/components/ui/health-bar";
 import { fmtUsd, fmtUsdExact, fmtUsdg, orDash } from "@/lib/format";
 import { COLLATERAL_POOLS, MARKETS, poolById, poolHref } from "@/lib/markets";
-import { repay, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
+import { collectFees, repay, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
 import { samePool } from "@/lib/onchain/contracts";
-import { describePosition } from "@/lib/onchain/describe";
+import { describePosition, feesInWords } from "@/lib/onchain/describe";
 import { explainForPool } from "@/lib/onchain/errors";
 import { listState, unreadNote } from "@/lib/onchain/list-status";
-import { repayGate, withdrawCollateralGate, withdrawGate, type Gate } from "@/lib/onchain/gates";
+import { collectFeesGate, repayGate, withdrawCollateralGate, withdrawGate, type Gate } from "@/lib/onchain/gates";
 import { useAction, useLenderState, usePositions, useSession, useWalletPositions } from "@/lib/onchain/hooks";
 import type { PositionState } from "@/lib/onchain/reads";
 import type { MarketTier } from "@/lib/risk-params";
@@ -25,9 +25,10 @@ import { formatUsdg, healthFactorToNumber, parseUsdg, usdgToNumber, wadToNumber 
 import { cn } from "@/lib/utils";
 
 /**
- * What a wallet holds in Farmenta, with the two actions that take it out
- * again: withdrawing USDG from a market, and repaying a loan and withdrawing
- * its collateral. Every figure here is read from the chain.
+ * What a wallet holds in Farmenta, with the actions that take it out again:
+ * withdrawing USDG from a market, repaying a loan and withdrawing its
+ * collateral, and collecting the fees a deposited position has earned. Every
+ * figure here is read from the chain.
  */
 const marketName = (tier: MarketTier) => MARKETS.find((market) => market.id === tier)!.name;
 const usdg = (amount: bigint) => `${fmtUsdg(usdgToNumber(amount))} USDG`;
@@ -184,11 +185,20 @@ const poolOf = (position: PositionState) => poolById(position.poolId);
 function BorrowPosition({ tier, position }: { tier: MarketTier; position: PositionState }) {
   const session = useSession();
   const action = useAction(tier);
-  const [open, setOpen] = useState(false);
+  // One panel under the row at a time: the repayment's or the fees'.
+  const [panel, setPanel] = useState<"repay" | "fees" | null>(null);
+  const toggle = (next: "repay" | "fees") => {
+    setPanel(panel === next ? null : next);
+    action.reset();
+  };
 
   const pool = poolOf(position);
-  const { fee, feesUsd } = describePosition(position);
+  const { fee, feesUsd, fees } = describePosition(position);
   const exit = withdrawCollateralGate(position);
+  const collect = collectFeesGate(position);
+  // Left out while there is nothing to collect.
+  const collectable = collect.ok || collect.code !== "NoFees";
+  const feesNamed = pool ? feesInWords(fees, pool.base.symbol) : null;
   const healthFactor = position.risk ? healthFactorToNumber(position.risk.healthFactor) : null;
   const tone = healthFactor === null ? null : hfTone(healthFactor);
 
@@ -238,14 +248,21 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
           {position.debt > 0n && (
             <button
               type="button"
-              aria-expanded={open}
-              onClick={() => {
-                setOpen(!open);
-                action.reset();
-              }}
+              aria-expanded={panel === "repay"}
+              onClick={() => toggle("repay")}
               className={buttonClasses({ variant: "secondary", size: "sm" })}
             >
               Repay
+            </button>
+          )}
+          {collectable && (
+            <button
+              type="button"
+              aria-expanded={panel === "fees"}
+              onClick={() => toggle("fees")}
+              className={buttonClasses({ variant: "secondary", size: "sm" })}
+            >
+              Collect fees
             </button>
           )}
           <ActionButton
@@ -274,7 +291,31 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
         </p>
       )}
 
-      {open && position.debt > 0n && (
+      {panel === "fees" && collectable && (
+        <div className="mt-4 border-t border-border/70 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+            <p className="text-[12px] leading-[18px] text-steel-400">
+              Both tokens go to your wallet, and the position stays deposited.
+            </p>
+            <ActionButton
+              session={session}
+              gate={collect}
+              busy={action.busy}
+              size="sm"
+              label={feesNamed ? `Collect ${feesNamed}` : "Collect fees"}
+              onClick={() =>
+                void action.run(
+                  "The fees are in your wallet.",
+                  (clients, refs, onStep) => collectFees(clients, refs, position.tokenId, onStep),
+                  position.poolId,
+                )
+              }
+            />
+          </div>
+          {position.debt > 0n && <p className="mt-2 text-[11px] leading-[17px] text-warn">{FEES_ARE_COLLATERAL}</p>}
+        </div>
+      )}
+      {panel === "repay" && position.debt > 0n && (
         <AmountAction
           id={`repay-${position.tokenId}`}
           label="Amount to repay, in USDG"

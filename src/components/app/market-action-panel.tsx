@@ -2,17 +2,19 @@
 
 import { useState } from "react";
 
-import { ActionButton, ActionNote, AmountField } from "@/components/app/action-controls";
+import { ActionButton, ActionNote, AmountField, FEES_ARE_COLLATERAL } from "@/components/app/action-controls";
 import { PositionPicker, usePoolPositions } from "@/components/app/position-picker";
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { HealthBar, hfLabel, hfTone } from "@/components/ui/health-bar";
 import { Segmented } from "@/components/ui/segmented";
 import { useMarket, usePoolFigures } from "@/lib/backend/hooks";
-import { fmtPct, fmtUsd, fmtUsdg, orDash } from "@/lib/format";
+import { fmtPct, fmtUsd, fmtUsdExact, fmtUsdg, orDash } from "@/lib/format";
 import { closureOf, MARKETS, NETWORKS, type CollateralPool } from "@/lib/markets";
-import { borrow, depositCollateral, repay, supply, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
+import { borrow, collectFees, depositCollateral, repay, supply, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
+import { describePosition, feesInWords } from "@/lib/onchain/describe";
 import {
   borrowGate,
+  collectFeesGate,
   depositCollateralGate,
   entryGate,
   repayGate,
@@ -43,8 +45,8 @@ import { cn } from "@/lib/utils";
  * it cannot be read; the actions do not wait for them.
  *
  * In a market the app holds closed (`closureOf`), what brings funds in is refused, and the
- * button says so: supplying, depositing a position, borrowing. Withdrawing, repaying and
- * taking collateral back are decided as in any other market.
+ * button says so: supplying, depositing a position, borrowing. Withdrawing, repaying, taking
+ * collateral back and collecting a position's fees are decided as in any other market.
  */
 type Tab = "borrow" | "supply";
 
@@ -212,6 +214,11 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
         ? entryGate(closure, borrowGate(position, amount))
         : repayGate(position, amount);
   const exit = position && held ? withdrawCollateralGate(position) : LOADING;
+  const collect = position && held ? collectFeesGate(position) : LOADING;
+  const { feesUsd, fees } = position && held ? describePosition(position) : { feesUsd: null, fees: null };
+  const feesNamed = feesInWords(fees, pool.base.symbol);
+  // Left out while there is nothing to collect.
+  const collectable = held && (collect.ok || collect.code !== "NoFees");
 
   const limit = !position || !held ? undefined : borrowing ? position.risk?.maxBorrow : position.debt;
   const over = !gate.ok && ["BorrowExceedsMaxLtv", "InsufficientBalance"].includes(gate.code);
@@ -268,6 +275,15 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
     );
   };
 
+  const collectTheFees = async () => {
+    if (tokenId === null) return;
+    await action.run(
+      "The fees are in your wallet.",
+      (clients, refs, onStep) => collectFees(clients, refs, tokenId, onStep),
+      pool.poolId,
+    );
+  };
+
   return (
     <>
       <Card>
@@ -310,6 +326,8 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
         <Network pool={pool} />
         <Row label="Loan (USDG)">{preview ? fmtUsdg(preview.debt) : held ? fmtUsdg(usdgToNumber(position.debt)) : "—"}</Row>
         <Row label={`Collateral (${pool.pair})`}>{preview ? fmtUsd(preview.collateralUsd) : "—"}</Row>
+        {/* In full. "Collateral" counts them up to a tenth of the principal. */}
+        {held && <Row label="Uncollected fees">{orDash(feesUsd, fmtUsdExact)}</Row>}
         <Row label="LTV">{preview ? `${(preview.ltv * 100).toFixed(2)}%` : "—"}</Row>
         <Row label="Liquidation LTV">{orDash(liquidationLtvPct, (value) => `${value.toFixed(0)}%`)}</Row>
         <Row label="Health factor">
@@ -356,6 +374,18 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
           className="w-full"
         />
       )}
+      {collectable && (
+        <ActionButton
+          session={session}
+          gate={collect}
+          busy={action.busy}
+          onClick={collectTheFees}
+          variant="secondary"
+          label={feesNamed ? `Collect ${feesNamed} in fees` : "Collect fees to your wallet"}
+          className="w-full"
+        />
+      )}
+      {collectable && position.debt > 0n && <p className="px-1 text-[11px] leading-[17px] text-warn">{FEES_ARE_COLLATERAL}</p>}
       <ActionNote
         session={session}
         gate={gate.ok || ["NoPosition", "Loading", "PositionsUnavailable"].includes(gate.code) ? { ok: true } : gate}

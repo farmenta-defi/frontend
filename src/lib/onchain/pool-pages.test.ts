@@ -36,7 +36,7 @@ const inWallet = (pool: (typeof COLLATERAL_POOLS)[number], over: Partial<Positio
   poolKey: pool.key,
   ticks: { tickLower: -600, tickUpper: 600 },
   decimals: pool.key.currency0.toLowerCase() === USDG.toLowerCase() ? [6, 18] : [18, 6],
-  holdings: { amount0: 1n, amount1: 1n, principalUsd: 1_000n * WAD, feesUsd: 0n },
+  holdings: { amount0: 1n, amount1: 1n, fees0: 0n, fees1: 0n, principalUsd: 1_000n * WAD, feesUsd: 0n },
   holdingsError: null,
   pool: { status: "open", terms: { maxLtvBps: 6500, ltBps: 7500 } },
   paused: false,

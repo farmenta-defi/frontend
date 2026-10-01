@@ -147,6 +147,26 @@ export function withdrawCollateralGate(position: PositionState): Gate {
   return OPEN;
 }
 
+/**
+ * Collecting a deposited position's fees. Open while the pool is frozen, shut while the market
+ * is paused (spec §4.1, §6.5). With a loan the market checks the health factor once the fees
+ * have left, at the prices it lends at, so collecting needs a price then; without a loan it
+ * does not. Whether the loan is still healthy without the fees is the contract's to say: the
+ * call is simulated before it is sent.
+ */
+export function collectFeesGate(position: PositionState): Gate {
+  const refused = notCollateral(position);
+  if (refused) return refused;
+  if (position.paused) return PAUSED("collecting fees");
+  if (position.holdings && position.holdings.fees0 === 0n && position.holdings.fees1 === 0n) {
+    return refuse("NoFees", "This position has no fees to collect.");
+  }
+  if (position.debt > 0n && !position.risk) {
+    return refuse(position.riskError?.code ?? "PriceUnavailable", position.riskError?.message ?? "This position cannot be priced right now.");
+  }
+  return OPEN;
+}
+
 /** What has to be true of the session before any action: a deployment, a wallet, the right network. */
 export function sessionGate(session: {
   deployed: boolean;

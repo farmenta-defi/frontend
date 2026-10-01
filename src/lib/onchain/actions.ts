@@ -9,8 +9,9 @@ import { signCollateralPermit } from "./permit";
 import { readLenderState, readPosition, type Clients, type MarketRefs } from "./reads";
 
 /**
- * The six transactions a user sends (FAR-72): supply and withdraw USDG,
- * deposit collateral, borrow, repay, withdraw collateral.
+ * The seven transactions a user sends: supply and withdraw USDG, deposit
+ * collateral, borrow, repay, withdraw collateral (FAR-72), and collect a
+ * deposited position's fees (FAR-73).
  *
  * Every one is simulated first. A simulation that reverts sends nothing and
  * throws an `ActionError` carrying the contract's error name and a sentence.
@@ -25,7 +26,16 @@ import { readLenderState, readPosition, type Clients, type MarketRefs } from "./
  */
 export type Step = {
   /** Which transaction of the action this is. */
-  name: "approve" | "supply" | "withdraw" | "permit" | "depositCollateral" | "borrow" | "repay" | "withdrawCollateral";
+  name:
+    | "approve"
+    | "supply"
+    | "withdraw"
+    | "permit"
+    | "depositCollateral"
+    | "borrow"
+    | "repay"
+    | "withdrawCollateral"
+    | "collectFees";
   /** `sign`: waiting on the wallet. `confirm`: sent, waiting for the receipt. */
   phase: "sign" | "confirm";
   hash?: Hex;
@@ -240,6 +250,22 @@ export function withdrawCollateral(clients: Clients, { market }: MarketRefs, tok
     clients,
     "withdrawCollateral",
     { address: market, abi: marketAbi, functionName: "withdrawCollateral", args: [tokenId, account] },
+    onStep,
+  );
+}
+
+/**
+ * Borrower: `collectFees(tokenId, to)`, paid to the sender. Both tokens of the
+ * pool arrive, USDG first; in the ETH pool the other one is native ETH. The
+ * position stays deposited. With a loan the market reverts a call that would
+ * leave the health factor under 1.
+ */
+export function collectFees(clients: Clients, { market }: MarketRefs, tokenId: bigint, onStep?: Progress) {
+  const account = clients.walletClient.account.address;
+  return send(
+    clients,
+    "collectFees",
+    { address: market, abi: marketAbi, functionName: "collectFees", args: [tokenId, account] },
     onStep,
   );
 }

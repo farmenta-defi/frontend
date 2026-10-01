@@ -42,6 +42,7 @@ const TARGETS = {
       // borrower
       "accrue",
       "borrow",
+      "collectFees",
       "debtOf",
       "depositCollateralWithPermit",
       "loanOf",

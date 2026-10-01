@@ -46,7 +46,7 @@ type Args = readonly unknown[];
 const MESSAGES: Record<string, (args: Args) => string> = {
   // market state
   EnforcedPause: () =>
-    "The market is paused. Supplying, depositing collateral and borrowing are stopped; repaying and withdrawing still work.",
+    "The market is paused. Supplying, depositing collateral, borrowing and collecting fees are stopped; repaying and withdrawing still work.",
   PoolFrozenForNewPositions: () =>
     "This pool is frozen: it takes no new collateral. Positions already deposited can still be repaid and withdrawn.",
   PoolNotOpenForBorrowing: () =>
@@ -87,8 +87,10 @@ const MESSAGES: Record<string, (args: Args) => string> = {
     `This position is worth ${usd(principal)} after the pool's haircut, below the ${usd(minimum)} minimum for collateral.`,
   PositionIsEmpty: () => "This position holds no liquidity, so it cannot be collateral.",
   PositionAlreadyHeld: () => "This position is already deposited.",
-  NotTheDepositor: () => "Only the wallet that deposited this position can withdraw it.",
-  InvalidRecipient: () => "That address cannot receive the position.",
+  NotTheDepositor: () => "Only the wallet that deposited this position can withdraw it or collect its fees.",
+  InvalidRecipient: () => "That address cannot receive the position or its fees.",
+  PositionWouldBeUnhealthy: () =>
+    "The market counts these fees as collateral, and without them the loan's health factor would be below 1. Repay part of the loan, then collect the fees.",
   InvalidBorrowRecipient: () => "That address cannot receive the loan.",
 
   // vault
@@ -146,7 +148,7 @@ export function explainForPool(explained: Explained, pool: PoolInWords | null | 
   if (explained.code === "StalePrice" && pool.feedHours === "us-stock-market") {
     return {
       code: explained.code,
-      message: `${pool.base.symbol}'s price feed follows the US stock market, and its last price is more than 25 hours old: the stock market is closed, as it is every weekend. Borrowing, depositing, and withdrawing collateral that still has a loan against it open again when the stock market does. Repaying works at any time.`,
+      message: `${pool.base.symbol}'s price feed follows the US stock market, and its last price is more than 25 hours old: the stock market is closed, as it is every weekend. Borrowing, depositing, withdrawing collateral that still has a loan against it, and collecting the fees of a position with a loan open again when the stock market does. Repaying works at any time.`,
     };
   }
   return explained;

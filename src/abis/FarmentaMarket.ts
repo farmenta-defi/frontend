@@ -65,6 +65,24 @@ export const farmentaMarketAbi = [
   },
   {
     "type": "function",
+    "name": "collectFees",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "convertToAssets",
     "inputs": [
       {

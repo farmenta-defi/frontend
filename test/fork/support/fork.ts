@@ -56,6 +56,12 @@ export function harnessOn(url: string, manifestText: string) {
     "function pause()",
     "function setFrozen(bytes32 poolId, bool frozen)",
   ]);
+  const terms = parseAbi([
+    "struct Listing { bool listed; bool frozen; uint8 tier; uint16 maxLtvBps; uint16 ltStartBps; uint16 ltTargetBps; uint40 rampStart; uint40 rampDuration; uint16 liquidatorBonusBps; uint16 removeHaircutBps; uint128 debtCapUsdg; uint128 minPositionUsd; }",
+    "struct ListingParams { uint16 maxLtvBps; uint16 ltBps; uint16 liquidatorBonusBps; uint16 removeHaircutBps; uint128 debtCapUsdg; uint128 minPositionUsd; }",
+    "function listingOf(bytes32 poolId) view returns (Listing)",
+    "function updateTerms(bytes32 poolId, ListingParams params)",
+  ]);
   const recorder = parseAbi([
     "function record((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) key)",
     "function consult(bytes32 poolId) view returns (int24)",
@@ -216,6 +222,30 @@ export function harnessOn(url: string, manifestText: string) {
     });
   }
 
+  /**
+   * Lowers a pool's liquidation threshold as the policy's owner, impersonated, leaving its other
+   * terms as they are. It takes effect at once for the loans there are (spec §6.5).
+   */
+  async function lowerLiquidationThreshold(poolId: Hex, ltBps: number) {
+    const policy = deployment.collateralPolicy;
+    const [owner, listing] = await Promise.all([
+      publicClient.readContract({ address: policy, abi: ownerActions, functionName: "owner" }),
+      publicClient.readContract({ address: policy, abi: terms, functionName: "listingOf", args: [poolId] }),
+    ]);
+    const { maxLtvBps, liquidatorBonusBps, removeHaircutBps, debtCapUsdg, minPositionUsd } = listing;
+    await as(owner, async () => {
+      await mined(
+        await anvil.writeContract({
+          account: owner,
+          address: policy,
+          abi: terms,
+          functionName: "updateTerms",
+          args: [poolId, { maxLtvBps, ltBps, liquidatorBonusBps, removeHaircutBps, debtCapUsdg, minPositionUsd }],
+        }),
+      );
+    });
+  }
+
   /** Records a pool's price in `TwapRecorder`, as the keeper does every five minutes. Anyone may. */
   async function recordPrice(key: PoolKey) {
     const keeper = await newUser("price-recorder");
@@ -273,6 +303,7 @@ export function harnessOn(url: string, manifestText: string) {
     emptyPosition,
     pause,
     freeze,
+    lowerLiquidationThreshold,
     recordPrice,
     hasAveragePrice,
     wait,
@@ -302,6 +333,7 @@ export const {
   emptyPosition,
   pause,
   freeze,
+  lowerLiquidationThreshold,
   recordPrice,
   hasAveragePrice,
   wait,

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   entryGate,
   borrowGate,
+  collectFeesGate,
   depositCollateralGate,
   repayGate,
   sessionGate,
@@ -177,7 +178,7 @@ describe("depositCollateralGate", () => {
     });
 
     it("takes a position that was valued, whatever an earlier reading failed with", () => {
-      const holdings = { amount0: 1n, amount1: 1n, principalUsd: 100n * 10n ** 18n, feesUsd: 0n };
+      const holdings = { amount0: 1n, amount1: 1n, fees0: 0n, fees1: 0n, principalUsd: 100n * 10n ** 18n, feesUsd: 0n };
 
       expect(depositCollateralGate(inWallet({ holdings, holdingsError: null }), POOL)).toEqual({ ok: true });
     });
@@ -281,6 +282,74 @@ describe("repayGate and withdrawCollateralGate", () => {
 
     it("has nothing to repay on a loan without debt", () => {
       expect(code(repayGate(collateral({ debt: 0n }), "max"))).toBe("NoDebt");
+    });
+  });
+});
+
+describe("collectFeesGate", () => {
+  const WAD = 10n ** 18n;
+  /** Fees in each of the pool's two tokens. The USD figure follows them, as the valuer's does. */
+  const holdings = (fees0: bigint, fees1 = 0n) => ({
+    amount0: 1n,
+    amount1: 1n,
+    fees0,
+    fees1,
+    principalUsd: 400n * WAD,
+    feesUsd: (fees0 + fees1) * WAD,
+  });
+  const earning = (over: Partial<PositionState> = {}) => collateral({ holdings: holdings(3n, 2n), ...over });
+
+  describe("positive", () => {
+    it("opens for collateral that has earned fees, with a loan and without", () => {
+      expect(collectFeesGate(earning())).toEqual({ ok: true });
+      expect(collectFeesGate(earning({ debt: 0n }))).toEqual({ ok: true });
+    });
+  });
+
+  describe("negative", () => {
+    it("refuses a position that is not the wallet's collateral", () => {
+      expect(code(collectFeesGate(inWallet({ holdings: holdings(3n, 2n) })))).toBe("NotTheDepositor");
+      expect(code(collectFeesGate(earning({ place: "elsewhere" })))).toBe("NotTheDepositor");
+    });
+
+    it("stops while the market is paused, with a loan and without", () => {
+      expect(code(collectFeesGate(earning({ paused: true })))).toBe("EnforcedPause");
+      const gate = collectFeesGate(earning({ paused: true, debt: 0n }));
+      expect(gate.ok === false && gate.message).toMatch(/paused.*collecting fees/);
+    });
+
+    it("has nothing to collect where no fees have been earned in either token", () => {
+      expect(code(collectFeesGate(earning({ holdings: holdings(0n, 0n) })))).toBe("NoFees");
+    });
+
+    it("refuses a loan that cannot be priced, with the oracle's reason", () => {
+      const unpriced = earning({ risk: null, riskError: { code: "StalePrice", message: "stale" } });
+      expect(collectFeesGate(unpriced)).toEqual({ ok: false, code: "StalePrice", message: "stale" });
+      expect(code(collectFeesGate(earning({ risk: null })))).toBe("PriceUnavailable");
+    });
+  });
+
+  describe("edge case", () => {
+    it("stays open while the pool is frozen", () => {
+      expect(collectFeesGate(earning({ pool: { status: "frozen", terms: null } }))).toEqual({ ok: true });
+    });
+
+    it("needs no price without a loan: the market checks nothing then", () => {
+      const unpriced = earning({ debt: 0n, risk: null, riskError: { code: "StalePrice", message: "stale" } });
+      expect(collectFeesGate(unpriced)).toEqual({ ok: true });
+    });
+
+    it("stays open without a loan where the fees could not be read, and leaves it to the contract", () => {
+      expect(collectFeesGate(collateral({ debt: 0n, holdings: null, risk: null }))).toEqual({ ok: true });
+    });
+
+    it("opens for the smallest unit of a fee, in one token alone", () => {
+      expect(collectFeesGate(earning({ holdings: holdings(1n, 0n) }))).toEqual({ ok: true });
+      expect(collectFeesGate(earning({ holdings: holdings(0n, 1n) }))).toEqual({ ok: true });
+    });
+
+    it("goes by the tokens and not by their value: fees worth less than the valuer can price are still collected", () => {
+      expect(collectFeesGate(earning({ holdings: { ...holdings(0n, 1n), feesUsd: 0n } }))).toEqual({ ok: true });
     });
   });
 });

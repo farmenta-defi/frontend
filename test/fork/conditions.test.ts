@@ -5,6 +5,7 @@ import { afterEach, describe, expect, inject, it, vi } from "vitest";
 
 import {
   borrow,
+  collectFees,
   depositCollateral,
   repay,
   supply,
@@ -14,6 +15,7 @@ import {
 import { ActionError } from "@/lib/onchain/errors";
 import {
   borrowGate,
+  collectFeesGate,
   depositCollateralGate,
   repayGate,
   sessionGate,
@@ -82,7 +84,7 @@ describe("a paused market", () => {
   isolateEachTest();
 
   describe("negative", () => {
-    it("stops supplying, depositing collateral and borrowing, each with the reason", async () => {
+    it("stops supplying, depositing collateral, borrowing and collecting fees, each with the reason", async () => {
       const { lender, borrower } = await marketInUse();
       await pause(market);
 
@@ -90,6 +92,9 @@ describe("a paused market", () => {
         supplyGate(await lenderState(lender.address), 100n * USDG),
         depositCollateralGate(await position(IN_WALLET, borrower.address)),
         borrowGate(await position(INDEBTED, borrower.address), 10n * USDG),
+        // With a loan and without: the pause stops it either way.
+        collectFeesGate(await position(INDEBTED, borrower.address)),
+        collectFeesGate(await position(DEBT_FREE, borrower.address)),
       ];
       for (const gate of gates) {
         expect(gate).toMatchObject({ ok: false, code: "EnforcedPause" });
@@ -101,6 +106,8 @@ describe("a paused market", () => {
       expect((await refusal(supply(lender.clients, blueChip, 100n * USDG))).code).toBe("EnforcedPause");
       expect((await refusal(depositCollateral(borrower.clients, blueChip, IN_WALLET))).code).toBe("EnforcedPause");
       expect((await refusal(borrow(borrower.clients, blueChip, INDEBTED, 10n * USDG))).code).toBe("EnforcedPause");
+      expect((await refusal(collectFees(borrower.clients, blueChip, INDEBTED))).code).toBe("EnforcedPause");
+      expect((await refusal(collectFees(borrower.clients, blueChip, DEBT_FREE))).code).toBe("EnforcedPause");
       expect(await nonceOf(lender.address), "the lender sent a transaction").toBe(lenderNonce);
       expect(await nonceOf(borrower.address), "the borrower sent a transaction").toBe(borrowerNonce);
       expect(await ownerOf(IN_WALLET)).toBe(borrower.address);
@@ -184,14 +191,20 @@ describe("a frozen pool", () => {
   });
 
   describe("positive", () => {
-    it("still repays and withdraws collateral", async () => {
+    it("still collects fees, repays and withdraws collateral", async () => {
       const { borrower } = await marketInUse();
       await freeze(ETH_USDG.id);
-      await dealUsdg(borrower.address, 200n * USDG);
 
       const frozen = await position(INDEBTED, borrower.address);
       expect(frozen.pool.status).toBe("frozen");
+      expect(collectFeesGate(frozen)).toEqual({ ok: true });
       expect(repayGate(frozen, "max")).toEqual({ ok: true });
+
+      // The loan's 100 USDG is in the wallet; what arrives on top of it is the fees.
+      await collectFees(borrower.clients, blueChip, INDEBTED);
+      expect(await usdgBalance(borrower.address)).toBeGreaterThan(100n * USDG);
+      expect((await position(INDEBTED, borrower.address)).holdings!.feesUsd).toBe(0n);
+      await dealUsdg(borrower.address, 200n * USDG);
 
       await repay(borrower.clients, blueChip, INDEBTED, "max");
       await withdrawCollateral(borrower.clients, blueChip, INDEBTED);
@@ -243,7 +256,7 @@ describe("a wallet on another network", () => {
   }
 
   describe("negative", () => {
-    it("cannot send any of the six transactions", async () => {
+    it("cannot send any of the seven transactions", async () => {
       const { lender, borrower } = await marketInUse();
       await dealUsdg(borrower.address, 500n * USDG);
       const astray = { lender: walletOn(mainnet.id, "lender"), borrower: walletOn(mainnet.id, "borrower") };
@@ -259,6 +272,7 @@ describe("a wallet on another network", () => {
         () => borrow(astray.borrower, blueChip, INDEBTED, 10n * USDG),
         () => repay(astray.borrower, blueChip, INDEBTED, "max"),
         () => withdrawCollateral(astray.borrower, blueChip, DEBT_FREE),
+        () => collectFees(astray.borrower, blueChip, INDEBTED),
       ];
       for (const attempt of attempts) expect((await refusal(attempt())).code).toBe("WrongNetwork");
 
@@ -317,7 +331,7 @@ describe("with the backend down", () => {
   }
 
   describe("positive", () => {
-    it("all six actions go through, over the RPC alone", async () => {
+    it("all seven actions go through, over the RPC alone", async () => {
       const lender = await newUser("lender");
       await dealUsdg(lender.address, 5_000n * USDG);
       const borrower = await newUser("borrower");
@@ -327,6 +341,7 @@ describe("with the backend down", () => {
       await supply(lender.clients, blueChip, 5_000n * USDG);
       await depositCollateral(borrower.clients, blueChip, INDEBTED);
       await borrow(borrower.clients, blueChip, INDEBTED, 100n * USDG);
+      await collectFees(borrower.clients, blueChip, INDEBTED);
       await dealUsdg(borrower.address, 200n * USDG);
       await repay(borrower.clients, blueChip, INDEBTED, "max");
       await withdrawCollateral(borrower.clients, blueChip, INDEBTED);
