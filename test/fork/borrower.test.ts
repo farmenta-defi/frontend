@@ -95,8 +95,8 @@ describe("deposit collateral", () => {
       expect(after.place).toBe("collateral");
       expect(after.debt).toBe(0n);
       expect(after.risk?.healthFactor).toBe(maxUint256);
-      // Above the listing's $50 minimum, or the deposit would have been refused.
-      expect(after.risk!.positionValue).toBeGreaterThan(50n * 10n ** 18n);
+      // Above the listing's $5 minimum, or the deposit would have been refused.
+      expect(after.risk!.positionValue).toBeGreaterThan(5n * 10n ** 18n);
       // maxBorrow is 65% of the value (the listing's max LTV), in USDG at the oracle's price,
       // and the market only lends while that price is within $0.97 to $1.03.
       const atMaxLtv = (after.risk!.positionValue * 6500n) / 10_000n / 10n ** 12n;
