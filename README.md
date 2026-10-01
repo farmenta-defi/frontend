@@ -141,10 +141,12 @@ to it and remove part of its liquidity. They live in `src/lib/onchain/`.
 - **A deposited position's fees are collected with `collectFees`, to the connected wallet**
   (the fee half of FAR-73). The market holds the NFT, so Uniswap's own page cannot collect them.
   Both tokens arrive, USDG first, and the position stays deposited; no other recipient is
-  offered. "Collect fees" on the position's row in Portfolio opens a panel, and the pool's page
-  has the button under its action rail. In both, the button names what it pays out in each
-  token, read from `PositionValuer.value(tokenId)` at that moment ("Collect 0.0005439 ETH and
-  1.1277 USDG"); the ETH pool pays native ETH. For a position with a loan a sentence beside
+  offered. "Collect fees" on the position's row in Portfolio opens a panel, and on the pool's page
+  the fees are in the selected position's card, at the top of the action rail, with a "Collect"
+  button beside them. In both, what is paid out is written beside the button in each token,
+  read from `PositionValuer.value(tokenId)` at that moment ("0.0005439 ETH and 1.1277 USDG"),
+  as text that wraps: an amount of many digits does not fit a button's label. The ETH pool pays
+  native ETH. For a position with a loan a sentence beside
   it says that the market counts the fees as collateral and that collecting them lowers the
   health factor. The button is left out while the position has no fees in either token. A
   frozen pool does not stop it; a paused market does. With a loan the market checks the health
@@ -295,6 +297,7 @@ Four rules the pages keep:
 - **One colour rule for the health factor.** `hfTone()` in `src/components/ui/health-bar.tsx` decides the colour everywhere, so the same number is never cyan on one page and orange on another.
 
 ## Notes
+- The action rail of a pool's page stays in view beside the page. Where it is taller than the window it scrolls by itself: held in place and cut off, its last buttons only showed once the page was scrolled to its end.
 - The Portfolio page shows the connected wallet, its deposit in each market, and the loans on the positions this browser knows for it, all read from the chain and pinned to `chainId: 4663`: the same reads the Repay and Withdraw buttons are decided on, so a figure and the action under it never disagree. Two things on it are the backend's: the Activity tab, from the activity route, and Net APY, which is the supply APY of the market for a wallet with a deposit there and zero for a wallet without.
 - A position shows its uncollected fees in full, beside its value. On collateral the two differ: the market lends against fees only up to a tenth of the principal (spec §6.2).
 - The balance over time beside a deposit is a level line: the backend has no route for a wallet's balance history.

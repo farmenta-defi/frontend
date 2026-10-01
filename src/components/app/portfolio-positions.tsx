@@ -690,15 +690,21 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
       {panel === "fees" && collectable && (
         <div className="mt-4 border-t border-border/70 pt-4">
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-            <p className="text-[12px] leading-[18px] text-steel-400">
-              Both tokens go to your wallet, and the position stays deposited.
-            </p>
+            <div className="min-w-0">
+              {/* Text, so an amount of many digits wraps instead of running out of a button. */}
+              {feesNamed && (
+                <p className="tnum text-[13px] font-medium text-foreground [overflow-wrap:anywhere]">{feesNamed}</p>
+              )}
+              <p className="mt-0.5 text-[12px] leading-[18px] text-steel-400">
+                Both tokens go to your wallet, and the position stays deposited.
+              </p>
+            </div>
             <ActionButton
               session={session}
               gate={collect}
               busy={action.busy}
               size="sm"
-              label={feesNamed ? `Collect ${feesNamed}` : "Collect fees"}
+              label="Collect to your wallet"
               onClick={() =>
                 void action.run(
                   "The fees are in your wallet.",
