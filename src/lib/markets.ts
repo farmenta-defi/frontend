@@ -40,8 +40,9 @@ export const MARKETS: Market[] = [
 ];
 
 /**
- * A market the app holds closed for now. Its pools stay in the directory but cannot be opened
- * from it, and a pool's page takes no new supply, collateral or loan. Withdrawing, repaying
+ * A market the app holds closed for now. Its pools stay in the directory, where they carry the
+ * label and cannot be opened, and a pool's page carries the notice and takes no new supply,
+ * collateral or loan. Withdrawing, repaying
  * and taking collateral back stay open.
  *
  * This is the app's switch, not the contracts': nothing is paused or frozen on the chain.
