@@ -119,9 +119,9 @@ wallet, newest first, from `GET /pools/:poolId/activity`.
 
 ## On-chain actions
 
-The app sends eight transactions: supply and withdraw USDG, deposit collateral (with a permit),
-borrow, repay, withdraw collateral, and for a deposited position collect its fees and remove part
-of its liquidity. They live in `src/lib/onchain/`.
+The app sends nine transactions: supply and withdraw USDG, deposit collateral (with a permit),
+borrow, repay, withdraw collateral, and for a deposited position collect its fees, add liquidity
+to it and remove part of its liquidity. They live in `src/lib/onchain/`.
 
 - **Addresses** come from the address manifest, `deployments/<name>.json`, chosen with
   `NEXT_PUBLIC_FARMENTA_DEPLOYMENT` (see `deployments/README.md`). No Farmenta address is written
@@ -151,6 +151,33 @@ of its liquidity. They live in `src/lib/onchain/`.
   factor once the fees have left, at the prices it lends at, so a loan that cannot be priced
   cannot collect either, and one that would end under 1 is refused in the simulation with a
   sentence. Without a loan no price is needed.
+- **Liquidity is added to a deposited position with `increaseLiquidity`** (the part of FAR-66
+  that is about an existing position), from "Add liquidity" on the position's row in Portfolio.
+  The amount is 25%, 50% or 100% of the liquidity the position holds, which works for a position
+  in its range, taking both tokens, and for one outside it, taking one. The panel shows, for
+  each token, what the addition takes at the pool's price now, the most the wallet agrees to
+  pay, and what the wallet holds.
+- **What an addition costs is computed from the pool's price**, read from the `StateView` the
+  valuer itself reads (`getSlot0`), with Uniswap's own arithmetic in integers
+  (`src/lib/onchain/liquidity-math.ts`): `TickMath.getSqrtPriceAtTick`, the two rounded-up
+  amount formulas, and the pool's three cases by its tick. On the fork an addition spends that
+  figure to the unit, in all six pools.
+- **The maximum is the need plus the slippage tolerance, rounded up, and it is one figure
+  everywhere**: the approval to Permit2, the Permit2 permit, the call, and for the ETH pool the
+  ETH sent. Nothing is approved or permitted without limit, and after an addition nothing is
+  left approved. 0.5% unless the user changes it, a warning above 1%, refused above 5%
+  (spec §12). The maximum is the only bound the contract holds an addition to: one unit under
+  the need, and PositionManager reverts.
+- **An addition is an approval for each ERC-20 token, a signature, and the transaction.** The
+  market pulls the tokens through Permit2 straight to PositionManager, with the market as the
+  permit's only spender and a deadline of ten minutes. Native ETH is no leg of the permit. A
+  token that gives Permit2 an allowance of its own accord (AI does) is not approved by the app.
+  What the addition does not take comes back in the same transaction, with the position's fees.
+- **The price is read again before anything is approved or signed.** A need that has grown past
+  a maximum is refused there, and the panel offers "Get a new quote"; the tolerance stays as it
+  was set. A pool that is frozen or no longer listed, a paused market, a loan that cannot be
+  priced and a wallet that holds less than a maximum are refused before the wallet is asked
+  too. A market the app holds closed refuses an addition, as it refuses a deposit.
 - **Part of a deposited position's liquidity is removed with `decreaseLiquidity`** (the other
   half of FAR-73), from "Remove liquidity" on the position's row in Portfolio. The share is 25%,
   50% or 75% of the position's liquidity. The whole of it is not offered: what stays has to be
@@ -255,7 +282,7 @@ Four rules the pages keep:
 - `src/lib/deployment.ts`: the address manifest
 - `src/lib/units.ts`: USDG (6 decimals), USD (1e18) and bps conversions, shared with the data layer
 - `src/lib/query-keys.ts`: query keys for the backend and the chain, and what a transaction invalidates
-- `src/lib/onchain/`: reads, gates, the eight actions, the quote of a removal of liquidity, the permit, error messages, and the hooks
+- `src/lib/onchain/`: reads, gates, the nine actions, the arithmetic and the permit of an addition of liquidity, the quote of a removal, the permit, error messages, and the hooks
 - `src/components/ui/`: primitives (button, badge, field, health bar, logo, tabs, segmented control, select menu, asset and address marks)
 - `src/components/site/`: nav, wallet button, app shell, page header
 - `src/components/landing/`: the hero for `/`, which is a single screen with nothing under it
@@ -271,7 +298,7 @@ Four rules the pages keep:
 - The Portfolio page shows the connected wallet, its deposit in each market, and the loans on the positions this browser knows for it, all read from the chain and pinned to `chainId: 4663`: the same reads the Repay and Withdraw buttons are decided on, so a figure and the action under it never disagree. Two things on it are the backend's: the Activity tab, from the activity route, and Net APY, which is the supply APY of the market for a wallet with a deposit there and zero for a wallet without.
 - A position shows its uncollected fees in full, beside its value. On collateral the two differ: the market lends against fees only up to a tenth of the principal (spec §6.2).
 - The balance over time beside a deposit is a level line: the backend has no route for a wallet's balance history.
-- **A market can be held closed in the app** (`CLOSED_MARKETS` in `src/lib/markets.ts`). Its pools stay in the directory with a "Temporarily closed" badge, turn red under the pointer, and do not open from there. A pool's page, which its address still reaches, carries the same badge, and its action rail refuses supplying, depositing a position and borrowing with that label on the button; withdrawing, repaying, taking collateral back, collecting a position's fees and removing its liquidity stay open. The app gives the label and no further reason (decided by the product owner, 1 Oct 2026). Nothing is paused or frozen on the chain: this is the app's switch only. The Meme market is closed this way since 1 Oct 2026, because the `TwapRecorder` deployed that day holds no recordings yet and the oracle prices a meme pool from 30 minutes of them. Removing the `meme` entry opens it again.
+- **A market can be held closed in the app** (`CLOSED_MARKETS` in `src/lib/markets.ts`). Its pools stay in the directory with a "Temporarily closed" badge, turn red under the pointer, and do not open from there. A pool's page, which its address still reaches, carries the same badge, and its action rail refuses supplying, depositing a position and borrowing with that label on the button, and Portfolio refuses adding liquidity the same way; withdrawing, repaying, taking collateral back, collecting a position's fees and removing its liquidity stay open. The app gives the label and no further reason (decided by the product owner, 1 Oct 2026). Nothing is paused or frozen on the chain: this is the app's switch only. The Meme market is closed this way since 1 Oct 2026, because the `TwapRecorder` deployed that day holds no recordings yet and the oracle prices a meme pool from 30 minutes of them. Removing the `meme` entry opens it again.
 - The Market and Rates charts on a pool's page are the history of the pool's market: lenders supply to the market, and every pool in it borrows from the same USDG at the same rate.
 - Some ISPs DNS-hijack `rpc.mainnet.chain.robinhood.com`; set `NEXT_PUBLIC_RPC_URL` to a provider endpoint (Alchemy free tier) if reads fail.
 - `src/app/icon.png` and `apple-icon.png` are generated from the logo; regenerate them if the logo changes.

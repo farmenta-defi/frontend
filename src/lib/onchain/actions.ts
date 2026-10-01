@@ -3,15 +3,18 @@ import { erc20Abi, maxUint256, type Abi, type Address, type Hex, type Transactio
 import { chain } from "@/lib/chain";
 
 import { marketAbi } from "./contracts";
-import { ActionError, explainRemovalError, toActionError } from "./errors";
-import { depositCollateralGate, repayGate, supplyGate, type Gate } from "./gates";
+import { permittedFor, readAddition, signAdditionPermit } from "./addition";
+import { ActionError, explainAdditionError, explainRemovalError, toActionError } from "./errors";
+import { depositCollateralGate, increaseLiquidityGate, repayGate, supplyGate, type Gate } from "./gates";
+import { isNative } from "./range";
 import { signCollateralPermit } from "./permit";
 import { readLenderState, readPosition, type Clients, type MarketRefs } from "./reads";
 
 /**
- * The eight transactions a user sends: supply and withdraw USDG, deposit
- * collateral, borrow, repay, withdraw collateral (FAR-72), and collect a
- * deposited position's fees and remove part of its liquidity (FAR-73).
+ * The nine transactions a user sends: supply and withdraw USDG, deposit
+ * collateral, borrow, repay, withdraw collateral (FAR-72), collect a deposited
+ * position's fees and remove part of its liquidity (FAR-73), and add liquidity
+ * to it (FAR-66).
  *
  * Every one is simulated first. A simulation that reverts sends nothing and
  * throws an `ActionError` carrying the contract's error name and a sentence.
@@ -36,7 +39,10 @@ export type Step = {
     | "repay"
     | "withdrawCollateral"
     | "collectFees"
-    | "decreaseLiquidity";
+    | "decreaseLiquidity"
+    | "approveAddition"
+    | "permitAddition"
+    | "increaseLiquidity";
   /** `sign`: waiting on the wallet. `confirm`: sent, waiting for the receipt. */
   phase: "sign" | "confirm";
   hash?: Hex;
@@ -75,7 +81,7 @@ export const ACCRUAL_GAS = 100_000n;
  */
 export const gasLimitFor = (estimate: bigint) => estimate + estimate / 10n + ACCRUAL_GAS;
 
-type Call = { address: Address; abi: Abi; functionName: string; args: readonly unknown[] };
+type Call = { address: Address; abi: Abi; functionName: string; args: readonly unknown[]; value?: bigint };
 
 async function send(clients: Clients, name: Step["name"], call: Call, onStep?: Progress) {
   const { publicClient, walletClient } = clients;
@@ -133,7 +139,14 @@ async function requireChain({ walletClient }: Clients) {
  * Approves `spender` for `amount` of `token` unless the wallet already has.
  * The approval is for this amount, not for `type(uint256).max`.
  */
-async function approve(clients: Clients, token: Address, spender: Address, amount: bigint, onStep?: Progress) {
+async function approve(
+  clients: Clients,
+  token: Address,
+  spender: Address,
+  amount: bigint,
+  onStep?: Progress,
+  name: Step["name"] = "approve",
+) {
   const owner = clients.walletClient.account.address;
   const allowance = await clients.publicClient.readContract({
     address: token,
@@ -142,7 +155,7 @@ async function approve(clients: Clients, token: Address, spender: Address, amoun
     args: [owner, spender],
   });
   if (allowance >= amount) return;
-  await send(clients, "approve", { address: token, abi: erc20Abi, functionName: "approve", args: [spender, amount] }, onStep);
+  await send(clients, name, { address: token, abi: erc20Abi, functionName: "approve", args: [spender, amount] }, onStep);
 }
 
 /** Lender: approve USDG, then `deposit(assets, receiver)`. The shares go to the sender. */
@@ -303,6 +316,75 @@ export async function decreaseLiquidity(
     // In the words of a removal, where the contract's error reads differently for one.
     const cause = error instanceof ActionError && error.cause ? error.cause : error;
     throw cause instanceof ActionError ? cause : new ActionError(explainRemovalError(cause), { cause });
+  }
+}
+
+/**
+ * Borrower: `increaseLiquidity(tokenId, liquidity, amount0Max, amount1Max, permit, signature)`.
+ *
+ * `max0` and `max1` are the most the wallet pays of each token: the need at
+ * the pool's price plus the tolerance, as the user was shown (`additionFor`).
+ * They are the only bound the contract holds an addition to, so they are
+ * everywhere the same figure: the approval to Permit2, the permit, the call,
+ * and for a native pool the ETH sent. Nothing is approved or permitted
+ * without limit. The market gives back what the addition did not take, and
+ * pays the position's fees out with it.
+ *
+ * Before anything is approved or signed the price is read again. A need that
+ * has grown past a maximum is refused there: the approval would be wasted and
+ * the permit signed for a transaction PositionManager reverts.
+ */
+export async function increaseLiquidity(
+  clients: Clients,
+  refs: MarketRefs,
+  tokenId: bigint,
+  addition: { liquidity: bigint; max0: bigint; max1: bigint },
+  onStep?: Progress,
+) {
+  const { market } = refs;
+  const account = clients.walletClient.account.address;
+  const { liquidity, max0, max1 } = addition;
+  try {
+    await requireChain(clients);
+    pass(increaseLiquidityGate(await readPosition(clients.publicClient, refs, tokenId, account)));
+
+    const now = await readAddition(clients.publicClient, market, tokenId, account, { liquidity });
+    if (now.need0 > max0 || now.need1 > max1) {
+      throw new ActionError({
+        code: "MaximumAmountExceeded",
+        message:
+          "The pool's price moved, and the addition would now cost more than the maximum it was quoted with. Get a new quote and try again.",
+      });
+    }
+    if (max0 > now.balance0 || max1 > now.balance1) {
+      throw new ActionError({ code: "InsufficientBalance", message: "Your wallet holds less than this addition can take." });
+    }
+
+    const permitted = permittedFor(now.poolKey, max0, max1);
+    // Permit2 moves a token only as far as the wallet has approved Permit2 for it.
+    for (const { token, amount } of permitted) {
+      if (amount > 0n) await approve(clients, token, now.permit2, amount, onStep, "approveAddition");
+    }
+    onStep?.({ name: "permitAddition", phase: "sign" });
+    const { permit, signature } = await signAdditionPermit(clients, market, now.permit2, permitted);
+
+    return await send(
+      clients,
+      "increaseLiquidity",
+      {
+        address: market,
+        abi: marketAbi,
+        functionName: "increaseLiquidity",
+        args: [tokenId, liquidity, max0, max1, permit, signature],
+        // A native pool's ETH is no ERC-20 leg: the market wants exactly its maximum as value.
+        value: isNative(now.poolKey.currency0) ? max0 : 0n,
+      },
+      onStep,
+    );
+  } catch (error) {
+    // In the words of an addition, where the contract's error reads differently for one.
+    const cause = error instanceof ActionError && error.cause ? error.cause : error;
+    throw cause instanceof ActionError ? cause : new ActionError(explainAdditionError(cause), { cause });
   }
 }
 

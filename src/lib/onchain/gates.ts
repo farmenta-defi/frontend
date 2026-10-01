@@ -188,11 +188,59 @@ export function decreaseLiquidityGate(position: PositionState, toleranceBps: num
   if (position.debt > 0n && !position.risk) {
     return refuse(position.riskError?.code ?? "PriceUnavailable", position.riskError?.message ?? "This position cannot be priced right now.");
   }
+  return toleranceGate(toleranceBps);
+}
+
+/**
+ * The slippage tolerance of a change of liquidity (spec §12): `null` when what was typed is not
+ * one, refused above 5%. Above 1% it is taken, and the panel warns.
+ */
+export function toleranceGate(toleranceBps: number | null): Gate {
   if (toleranceBps === null) return refuse("NoTolerance", "Enter a slippage tolerance, in percent.");
   if (toleranceBps > TOLERANCE_REFUSED_ABOVE_BPS) {
     return refuse("ToleranceTooHigh", "A slippage tolerance above 5% is refused. Enter 5% or less.");
   }
   return OPEN;
+}
+
+/**
+ * Adding liquidity to a deposited position, before a quote is asked for. It brings funds in, so
+ * the pool has to take new capital still: a frozen or unlisted pool refuses it, as it refuses a
+ * deposit, and so does a paused market. With a loan the market checks the health factor after
+ * the addition, at the prices it lends at; without one no price is needed.
+ */
+export function increaseLiquidityGate(position: PositionState): Gate {
+  const refused = notCollateral(position);
+  if (refused) return refused;
+  if (position.paused) return PAUSED("adding liquidity");
+  if (position.pool.status === "unlisted") {
+    return refuse("PoolNotListed", "This pool is not listed on Farmenta, so no liquidity can be added to its positions.");
+  }
+  if (position.pool.status === "frozen") {
+    return refuse(
+      "PoolFrozenForNewPositions",
+      "This pool is frozen: it takes no added liquidity. Fees can still be collected and liquidity removed.",
+    );
+  }
+  if (position.debt > 0n && !position.risk) {
+    return refuse(position.riskError?.code ?? "PriceUnavailable", position.riskError?.message ?? "This position cannot be priced right now.");
+  }
+  return OPEN;
+}
+
+/**
+ * Whether the wallet can pay for an addition: the most it agreed to of each token, which is what
+ * the market pulls before it gives the change back. `symbols` name the two currencies in pool order.
+ */
+export function additionFundsGate(
+  funds: { max0: bigint; max1: bigint; balance0: bigint; balance1: bigint },
+  symbols: readonly [string, string],
+): Gate {
+  const short = [funds.max0 > funds.balance0 ? symbols[0] : null, funds.max1 > funds.balance1 ? symbols[1] : null].filter(
+    (symbol) => symbol !== null,
+  );
+  if (short.length === 0) return OPEN;
+  return refuse("InsufficientBalance", `Your wallet holds less ${short.join(" and less ")} than this addition can take.`);
 }
 
 /** What has to be true of the session before any action: a deployment, a wallet, the right network. */

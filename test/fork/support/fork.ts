@@ -90,14 +90,17 @@ export function harnessOn(url: string, manifestText: string) {
     return { address: account.address, clients: { publicClient, walletClient } };
   }
 
-  /** Sets a wallet's USDG balance. */
-  async function dealUsdg(to: Address, amount: bigint) {
+  /** Sets a wallet's balance of an ERC-20 token. */
+  async function deal(token: Address, to: Address, amount: bigint) {
     await anvil.request({
       // Not in viem's anvil types yet.
       method: "anvil_dealERC20" as never,
-      params: [to, USDG, `0x${amount.toString(16)}`] as never,
+      params: [to, token, `0x${amount.toString(16)}`] as never,
     });
   }
+
+  /** Sets a wallet's USDG balance. */
+  const dealUsdg = (to: Address, amount: bigint) => deal(USDG, to, amount);
 
   /** Approves `spender` for `amount` of the wallet's USDG, outside any action. */
   async function approveUsdg({ walletClient }: Clients, spender: Address, amount: bigint) {
@@ -324,6 +327,7 @@ export function harnessOn(url: string, manifestText: string) {
     publicClient,
     isolateEachTest,
     newUser,
+    deal,
     dealUsdg,
     approveUsdg,
     usdgBalance,
@@ -356,6 +360,7 @@ export const {
   publicClient,
   isolateEachTest,
   newUser,
+  deal,
   dealUsdg,
   approveUsdg,
   usdgBalance,

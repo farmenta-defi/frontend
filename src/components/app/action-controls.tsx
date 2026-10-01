@@ -63,6 +63,12 @@ const STEP: Record<Step["name"], Record<Step["phase"], string>> = {
   },
   collectFees: { sign: "Confirm the collection in your wallet.", confirm: "Waiting for the collection to confirm." },
   decreaseLiquidity: { sign: "Confirm the removal in your wallet.", confirm: "Waiting for the removal to confirm." },
+  approveAddition: {
+    sign: "Approve the amount the addition can take, in your wallet.",
+    confirm: "Waiting for the approval to confirm.",
+  },
+  permitAddition: { sign: "Sign the permit for these amounts in your wallet.", confirm: "" },
+  increaseLiquidity: { sign: "Confirm the addition in your wallet.", confirm: "Waiting for the addition to confirm." },
 };
 
 /**

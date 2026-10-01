@@ -147,6 +147,19 @@ export const positionManagerAbi = [
     "stateMutability": "view"
   },
   {
+    "type": "function",
+    "name": "permit2",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IAllowanceTransfer"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "event",
     "name": "Transfer",
     "inputs": [

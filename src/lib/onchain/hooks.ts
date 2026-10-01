@@ -11,6 +11,7 @@ import { chainKeys, invalidateAfterTransaction } from "@/lib/query-keys";
 import type { MarketTier } from "@/lib/risk-params";
 
 import type { Progress, Step } from "./actions";
+import { readAddition } from "./addition";
 import { POSITION_MANAGER_START_BLOCK, walletPositionsQuery } from "./discovery";
 import { explainError, type Explained } from "./errors";
 import { sessionGate, type Gate } from "./gates";
@@ -124,6 +125,24 @@ export function useRemoval(tier: MarketTier, tokenId: bigint, liquidity: bigint 
     refetchInterval: REFRESH_MS,
     // A refusal is an answer. Asking the same block again gives the same one.
     retry: false,
+  });
+}
+
+/**
+ * What adding `share` percent to a deposited position's liquidity costs at the pool's price, and
+ * what the wallet holds to pay it with. Read again every 15 seconds while the panel is open: the
+ * maximums the wallet signs for come from the quote on screen. `share` is `null` while there is
+ * nothing to quote.
+ */
+export function useAddition(tier: MarketTier, tokenId: bigint, share: number | null) {
+  const { account, publicClient } = useSession();
+  const refs = marketRefs(tier);
+
+  return useQuery({
+    queryKey: chainKeys.addition(tier, tokenId, account ?? "0x", share ?? 0),
+    queryFn: () => readAddition(publicClient!, refs!.market, tokenId, account!, { share: share! }),
+    enabled: Boolean(refs && account && publicClient && share !== null),
+    refetchInterval: REFRESH_MS,
   });
 }
 

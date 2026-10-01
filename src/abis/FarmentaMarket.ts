@@ -206,6 +206,73 @@ export const farmentaMarketAbi = [
   },
   {
     "type": "function",
+    "name": "increaseLiquidity",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "liquidity",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "amount0Max",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "amount1Max",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "permit",
+        "type": "tuple",
+        "internalType": "struct ISignatureTransfer.PermitBatchTransferFrom",
+        "components": [
+          {
+            "name": "permitted",
+            "type": "tuple[]",
+            "internalType": "struct ISignatureTransfer.TokenPermissions[]",
+            "components": [
+              {
+                "name": "token",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          },
+          {
+            "name": "nonce",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "deadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
     "name": "loanOf",
     "inputs": [
       {

@@ -48,7 +48,7 @@ type Messages = Record<string, (args: Args) => string>;
 const MESSAGES: Messages = {
   // market state
   EnforcedPause: () =>
-    "The market is paused. Supplying, depositing collateral, borrowing, collecting fees and removing liquidity are stopped; repaying and withdrawing still work.",
+    "The market is paused. Supplying, depositing collateral, borrowing, collecting fees, and adding and removing liquidity are stopped; repaying and withdrawing still work.",
   PoolFrozenForNewPositions: () =>
     "This pool is frozen: it takes no new collateral. Positions already deposited can still be repaid and withdrawn.",
   PoolNotOpenForBorrowing: () =>
@@ -100,6 +100,10 @@ const MESSAGES: Messages = {
     `What would be left can carry a loan of ${usd(limit)}, and this one is ${usd(debt)}. Remove less, or repay until the loan fits.`,
   LiquidityExceedsPosition: () => "The position holds less liquidity than that. Reload the page and try again.",
   ZeroLiquidity: () => "Choose how much of the liquidity to remove.",
+  MaximumAmountExceeded: () =>
+    "The pool's price moved, and the addition would now cost more than the maximum it was quoted with. Get a new quote and try again.",
+  NativeValueMismatch: () => "The ETH sent does not match the addition. Reload the page and try again.",
+  PermitDoesNotMatchPool: () => "The permit does not list this pool's tokens. Reload the page and try again.",
   MinimumAmountInsufficient: () =>
     "The pool's price moved, and the removal would now pay less than the minimum it was quoted with. Get a new quote and try again.",
 
@@ -121,6 +125,21 @@ const REMOVAL_MESSAGES: Messages = {
     `What would be left is worth ${usd(left)} after the pool's haircut, below the pool's ${usd(minimum)} minimum. Remove less. To take the whole position out, repay the loan and withdraw the collateral.`,
   NotTheDepositor: () => "Only the wallet that deposited this position can remove its liquidity.",
   InvalidRecipient: () => "That address cannot receive the liquidity.",
+};
+
+/**
+ * The errors that read differently when they come from an addition of liquidity. The market pays
+ * the position's fees out before the liquidity goes in, so an addition can leave a loan less
+ * healthy than it found it, and the way out is to add more.
+ */
+const ADDITION_MESSAGES: Messages = {
+  PositionWouldBeUnhealthy: () =>
+    "The position's fees are paid out before the liquidity goes in, and this addition is too small to make up for them: the loan's health factor would be below 1. Add more, or repay part of the loan.",
+  NotTheDepositor: () => "Only the wallet that deposited this position can add liquidity to it.",
+  PoolFrozenForNewPositions: () =>
+    "This pool is frozen: it takes no added liquidity. Fees can still be collected and liquidity removed.",
+  PoolNotListed: () => "This pool is not listed on Farmenta, so no liquidity can be added to its positions.",
+  EnforcedPause: () => "The market is paused, so adding liquidity is stopped. Repaying and withdrawing still work.",
 };
 
 function fromRevert(name: string, args: Args | undefined, overrides?: Messages): Explained {
@@ -175,6 +194,9 @@ export function explainForPool(explained: Explained, pool: PoolInWords | null | 
   }
   return explained;
 }
+
+/** `explainError` for an addition of liquidity. */
+export const explainAdditionError = (error: unknown) => explainError(error, ADDITION_MESSAGES);
 
 /** `explainError` for a removal of liquidity: the same errors, in the words of a removal where they differ. */
 export const explainRemovalError = (error: unknown) => explainError(error, REMOVAL_MESSAGES);
