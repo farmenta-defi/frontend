@@ -12,22 +12,29 @@ import { buttonClasses } from "@/components/ui/button";
 import { sanitizeAmount } from "@/components/ui/field";
 import { hfLabel, hfTone } from "@/components/ui/health-bar";
 import { fmtAmount, fmtUsd, fmtUsdExact, fmtUsdg, orDash } from "@/lib/format";
-import { COLLATERAL_POOLS, MARKETS, poolById, poolHref, type CollateralPool } from "@/lib/markets";
-import { collectFees, decreaseLiquidity, repay, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
+import { closureOf, COLLATERAL_POOLS, MARKETS, poolById, poolHref, type CollateralPool } from "@/lib/markets";
+import { collectFees, decreaseLiquidity, increaseLiquidity, repay, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
+import { ADDITION_SHARES, type AdditionShare } from "@/lib/onchain/addition";
 import { samePool } from "@/lib/onchain/contracts";
 import { describePosition, feesInWords, inPairOrder } from "@/lib/onchain/describe";
-import { explainForPool, explainRemovalError } from "@/lib/onchain/errors";
+import { explainAdditionError, explainForPool, explainRemovalError } from "@/lib/onchain/errors";
+import { additionFor } from "@/lib/onchain/liquidity-math";
 import { listState, unreadNote } from "@/lib/onchain/list-status";
 import {
+  additionFundsGate,
   collectFeesGate,
   decreaseLiquidityGate,
+  entryGate,
+  increaseLiquidityGate,
   repayGate,
+  toleranceGate,
   withdrawCollateralGate,
   withdrawGate,
   type Gate,
 } from "@/lib/onchain/gates";
 import {
   useAction,
+  useAddition,
   useLenderState,
   usePositions,
   useRemoval,
@@ -53,7 +60,8 @@ import { cn } from "@/lib/utils";
  * What a wallet holds in Farmenta, with the actions that take it out again:
  * withdrawing USDG from a market, repaying a loan and withdrawing its
  * collateral, collecting the fees a deposited position has earned, and
- * removing part of its liquidity. Every figure here is read from the chain.
+ * removing part of its liquidity; and one that puts more in, adding liquidity
+ * to a deposited position. Every figure here is read from the chain.
  */
 const marketName = (tier: MarketTier) => MARKETS.find((market) => market.id === tier)!.name;
 const usdg = (amount: bigint) => `${fmtUsdg(usdgToNumber(amount))} USDG`;
@@ -210,6 +218,195 @@ const poolOf = (position: PositionState) => poolById(position.poolId);
 /** Shown while a gate has no quote to decide on yet. */
 const QUOTING: Gate = { ok: false, code: "Loading", message: "" };
 
+/** The slippage tolerance of a change of liquidity, in percent: one field, the same in both panels. */
+function ToleranceField({
+  text,
+  invalid,
+  disabled,
+  onChange,
+}: {
+  text: string;
+  invalid: boolean;
+  disabled: boolean;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-[12px] text-steel-400">
+      Slippage tolerance
+      <input
+        inputMode="decimal"
+        value={text}
+        disabled={disabled}
+        aria-invalid={invalid}
+        onChange={(event) => onChange(event.target.value.replace(/[^0-9.]/g, ""))}
+        className="focus-ring tnum h-9 w-16 rounded-lg border border-border bg-transparent px-2 text-right text-[13px] text-foreground outline-none disabled:opacity-45"
+      />
+      %
+    </label>
+  );
+}
+
+/**
+ * Adding liquidity to a deposited position (FAR-66): a share of the liquidity it holds, the
+ * tolerance, and for each token what the addition takes at the pool's price now, the most the
+ * wallet agrees to pay, and what the wallet holds. The maximum is the need plus the tolerance,
+ * and it is the figure of the approval, of the permit and of the call alike. A price that moved
+ * past it sends nothing and asks for a new quote.
+ */
+function AddLiquidity({
+  tier,
+  position,
+  pool,
+  session,
+  action,
+}: {
+  tier: MarketTier;
+  position: PositionState;
+  pool: CollateralPool | null;
+  session: Session;
+  action: ReturnType<typeof useAction>;
+}) {
+  const [share, setShare] = useState<AdditionShare>(25);
+  const [toleranceText, setToleranceText] = useState((DEFAULT_TOLERANCE_BPS / 100).toString());
+  const toleranceBps = parseTolerance(toleranceText);
+
+  // Adding brings funds in, so a market the app holds closed refuses it before anything else.
+  const before = entryGate(closureOf(tier), increaseLiquidityGate(position));
+  const tolerance = toleranceGate(toleranceBps);
+  const quote = useAddition(tier, position.tokenId, before.ok ? share : null);
+  const addition = quote.data ?? null;
+  const priced =
+    addition && tolerance.ok && toleranceBps !== null
+      ? additionFor(addition.price, addition.range, addition.liquidity, toleranceBps)
+      : null;
+
+  const symbol = pool?.base.symbol ?? "tokens";
+  const usdgIsCurrency0 = position.poolKey?.currency0.toLowerCase() === position.asset.toLowerCase();
+  const funds = addition && priced ? additionFundsGate({ ...priced, ...addition }, usdgIsCurrency0 ? ["USDG", symbol] : [symbol, "USDG"]) : null;
+  const unread = quote.error ? explainAdditionError(quote.error) : null;
+  const gate: Gate = !before.ok
+    ? before
+    : !tolerance.ok
+      ? tolerance
+      : unread
+        ? { ok: false, ...unread }
+        : !addition || !priced || !funds
+          ? QUOTING
+          : funds;
+
+  const need = addition ? inPairOrder(position, addition.need0, addition.need1) : null;
+  const most = priced ? inPairOrder(position, priced.max0, priced.max1) : null;
+  const held = addition ? inPairOrder(position, addition.balance0, addition.balance1) : null;
+  const moved = action.state.status === "failed" && action.state.error.code === "MaximumAmountExceeded";
+  const cell = (value: number | undefined) => (value === undefined ? "—" : fmtAmount(value));
+
+  return (
+    <div className="mt-4 border-t border-border/70 pt-4">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <Segmented
+          label="Liquidity to add, as a share of what the position holds"
+          value={String(share)}
+          options={ADDITION_SHARES.map((value) => ({ id: String(value), label: `+${value}%` }))}
+          onChange={(next) => {
+            setShare(Number(next) as AdditionShare);
+            action.reset();
+          }}
+        />
+        <ToleranceField
+          text={toleranceText}
+          invalid={!tolerance.ok}
+          disabled={action.busy}
+          onChange={(next) => {
+            setToleranceText(next);
+            action.reset();
+          }}
+        />
+      </div>
+
+      <table className="mt-4 w-full max-w-[560px] border-collapse text-left text-[12.5px]">
+        <thead>
+          <tr className="text-steel-500">
+            <th scope="col" className="py-1 pr-4 font-normal">
+              You pay
+            </th>
+            <th scope="col" className="py-1 pr-4 text-right font-normal">
+              Needed now
+            </th>
+            <th scope="col" className="py-1 pr-4 text-right font-normal">
+              At most
+            </th>
+            <th scope="col" className="py-1 text-right font-normal">
+              In your wallet
+            </th>
+          </tr>
+        </thead>
+        <tbody className="tnum text-foreground">
+          {(
+            [
+              [symbol, "base"],
+              ["USDG", "usdg"],
+            ] as const
+          ).map(([name, side]) => (
+            <tr key={side}>
+              <th scope="row" className="py-1 pr-4 font-medium">
+                {name}
+              </th>
+              <td className="py-1 pr-4 text-right">{cell(need?.[side])}</td>
+              <td className="py-1 pr-4 text-right">{cell(most?.[side])}</td>
+              <td className="py-1 text-right">{cell(held?.[side])}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <p className="mt-3 max-w-[640px] text-[12px] leading-[18px] text-steel-400">
+        Your wallet approves each token for its maximum, signs a permit for the same amounts, and confirms the
+        transaction. What the addition does not take comes back with it, and so do the fees the position has earned.
+      </p>
+      {tolerance.ok && toleranceBps !== null && toleranceBps > TOLERANCE_WARNING_ABOVE_BPS && (
+        <p className="mt-2 text-[11px] leading-[17px] text-warn">
+          A tolerance above 1% lets the addition cost that much more than it was quoted at.
+        </p>
+      )}
+      {!gate.ok && gate.message && gate.code !== "MarketClosed" && session.gate.ok && (
+        <p className="mt-2 text-[11px] leading-[17px] text-warn">{explainForPool(gate, pool).message}</p>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <ActionButton
+          session={session}
+          gate={gate}
+          busy={action.busy}
+          size="sm"
+          label={`Add ${share}% more liquidity`}
+          onClick={() => {
+            if (!addition || !priced) return;
+            void action.run(
+              `Added ${share}% more liquidity. The change and the fees are in your wallet.`,
+              (clients, refs, onStep) =>
+                increaseLiquidity(clients, refs, position.tokenId, { liquidity: addition.liquidity, max0: priced.max0, max1: priced.max1 }, onStep),
+              position.poolId,
+            );
+          }}
+        />
+        {/* The tolerance stays as the user set it: a price that moved is answered with a new quote. */}
+        {moved && (
+          <button
+            type="button"
+            onClick={() => {
+              action.reset();
+              void quote.refetch();
+            }}
+            className={buttonClasses({ variant: "secondary", size: "sm" })}
+          >
+            Get a new quote
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Removing part of a deposited position's liquidity (FAR-73): a share of it, the tolerance, and
  * what each token pays: the principal the pool would give now, the fees that leave with it, and
@@ -264,21 +461,15 @@ function RemoveLiquidity({
             action.reset();
           }}
         />
-        <label className="flex items-center gap-2 text-[12px] text-steel-400">
-          Slippage tolerance
-          <input
-            inputMode="decimal"
-            value={toleranceText}
-            disabled={action.busy}
-            aria-invalid={!before.ok && ["NoTolerance", "ToleranceTooHigh"].includes(before.code)}
-            onChange={(event) => {
-              setToleranceText(event.target.value.replace(/[^0-9.]/g, ""));
-              action.reset();
-            }}
-            className="focus-ring tnum h-9 w-16 rounded-lg border border-border bg-transparent px-2 text-right text-[13px] text-foreground outline-none disabled:opacity-45"
-          />
-          %
-        </label>
+        <ToleranceField
+          text={toleranceText}
+          invalid={!before.ok && ["NoTolerance", "ToleranceTooHigh"].includes(before.code)}
+          disabled={action.busy}
+          onChange={(next) => {
+            setToleranceText(next);
+            action.reset();
+          }}
+        />
       </div>
 
       <table className="mt-4 w-full max-w-[560px] border-collapse text-left text-[12.5px]">
@@ -374,9 +565,9 @@ function RemoveLiquidity({
 function BorrowPosition({ tier, position }: { tier: MarketTier; position: PositionState }) {
   const session = useSession();
   const action = useAction(tier);
-  // One panel under the row at a time: the repayment's, the fees' or the liquidity's.
-  const [panel, setPanel] = useState<"repay" | "fees" | "liquidity" | null>(null);
-  const toggle = (next: "repay" | "fees" | "liquidity") => {
+  // One panel under the row at a time: the repayment's, the fees', or one of the liquidity's two.
+  const [panel, setPanel] = useState<"repay" | "fees" | "add" | "liquidity" | null>(null);
+  const toggle = (next: "repay" | "fees" | "add" | "liquidity") => {
     setPanel(panel === next ? null : next);
     action.reset();
   };
@@ -456,6 +647,14 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
           )}
           <button
             type="button"
+            aria-expanded={panel === "add"}
+            onClick={() => toggle("add")}
+            className={buttonClasses({ variant: "secondary", size: "sm" })}
+          >
+            Add liquidity
+          </button>
+          <button
+            type="button"
             aria-expanded={panel === "liquidity"}
             onClick={() => toggle("liquidity")}
             className={buttonClasses({ variant: "secondary", size: "sm" })}
@@ -512,6 +711,7 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
           {position.debt > 0n && <p className="mt-2 text-[11px] leading-[17px] text-warn">{FEES_ARE_COLLATERAL}</p>}
         </div>
       )}
+      {panel === "add" && <AddLiquidity tier={tier} position={position} pool={pool} session={session} action={action} />}
       {panel === "liquidity" && <RemoveLiquidity tier={tier} position={position} pool={pool} session={session} action={action} />}
       {panel === "repay" && position.debt > 0n && (
         <AmountAction

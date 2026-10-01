@@ -15,7 +15,15 @@ import { describe, expect, it } from "vitest";
 import { farmentaErrorsAbi } from "@/abis/FarmentaErrors";
 
 import { marketAbi } from "./contracts";
-import { ActionError, explainError, explainForPool, explainRemovalError, explainRevertData, toActionError } from "./errors";
+import {
+  ActionError,
+  explainAdditionError,
+  explainError,
+  explainForPool,
+  explainRemovalError,
+  explainRevertData,
+  toActionError,
+} from "./errors";
 
 const POOL = "0x54f7883914619af9105355bf83ed678bcf9f63560218ac61c9963b9503d0ba32";
 
@@ -32,7 +40,7 @@ describe("explainError", () => {
   describe("positive", () => {
     it("names every error FAR-72 lists and says what to do about it", () => {
       const cases: [string, readonly unknown[], RegExp][] = [
-        ["EnforcedPause", [], /paused.*collecting fees and removing liquidity are stopped/],
+        ["EnforcedPause", [], /paused.*collecting fees, and adding and removing liquidity are stopped/],
         ["PoolFrozenForNewPositions", [POOL], /frozen.*no new collateral/],
         ["PoolNotOpenForBorrowing", [POOL], /frozen.*no new loans/],
         ["BorrowExceedsMaxLtv", [700n * 10n ** 18n, 650n * 10n ** 18n], /\$700.*\$650/],
@@ -236,7 +244,7 @@ describe("the errors of a removal of liquidity", () => {
         ["ZeroLiquidity", [], /how much of the liquidity/],
         ["NotTheDepositor", [123n, zeroAddress], /remove its liquidity/],
         ["InvalidRecipient", [zeroAddress], /receive the liquidity/],
-        ["EnforcedPause", [], /removing liquidity are stopped/],
+        ["EnforcedPause", [], /adding and removing liquidity are stopped/],
       ];
       for (const [name, args, expected] of cases) {
         const explained = explainRemovalError(revertWith(name, args));
@@ -257,6 +265,55 @@ describe("the errors of a removal of liquidity", () => {
     it("keeps an error that is already explained as it is", () => {
       const refused = new ActionError({ code: "QuoteUnavailable", message: "no quote" });
       expect(explainRemovalError(refused)).toEqual({ code: "QuoteUnavailable", message: "no quote" });
+    });
+  });
+});
+
+describe("the errors of an addition of liquidity", () => {
+  describe("positive", () => {
+    it("asks for a new quote when the price moved past the maximums, and names no tolerance", () => {
+      const explained = explainAdditionError(revertWith("MaximumAmountExceeded", [100n, 101n]));
+
+      expect(explained.code).toBe("MaximumAmountExceeded");
+      expect(explained.message).toMatch(/price moved.*cost more than the maximum.*Get a new quote/);
+      expect(explained.message).not.toMatch(/tolerance/i);
+    });
+
+    it("says to add more where the fees paid out leave a loan under water", () => {
+      const explained = explainAdditionError(revertWith("PositionWouldBeUnhealthy", [123n, 990_000_000_000_000_000n]));
+
+      expect(explained.code).toBe("PositionWouldBeUnhealthy");
+      expect(explained.message).toMatch(/fees are paid out before the liquidity goes in.*Add more, or repay/);
+    });
+  });
+
+  describe("negative", () => {
+    it("names what the market refuses an addition with", () => {
+      const cases: [string, readonly unknown[], RegExp][] = [
+        ["PoolFrozenForNewPositions", [POOL], /no added liquidity/],
+        ["PoolNotListed", [POOL], /no liquidity can be added/],
+        ["NotTheDepositor", [123n, zeroAddress], /add liquidity to it/],
+        ["EnforcedPause", [], /adding liquidity is stopped/],
+        ["NativeValueMismatch", [1n, 0n], /ETH sent does not match/],
+        ["PermitDoesNotMatchPool", [], /permit does not list this pool's tokens/],
+      ];
+      for (const [name, args, expected] of cases) {
+        const explained = explainAdditionError(revertWith(name, args));
+        expect(explained.code, name).toBe(name);
+        expect(explained.message, name).toMatch(expected);
+      }
+    });
+  });
+
+  describe("edge case", () => {
+    it("leaves the same error in the words of collecting fees everywhere else", () => {
+      const collecting = explainError(revertWith("PositionWouldBeUnhealthy", [123n, 990_000_000_000_000_000n]));
+      expect(collecting.message).toMatch(/then collect the fees/);
+    });
+
+    it("keeps an error that is already explained as it is", () => {
+      const refused = new ActionError({ code: "InsufficientBalance", message: "short" });
+      expect(explainAdditionError(refused)).toEqual({ code: "InsufficientBalance", message: "short" });
     });
   });
 });

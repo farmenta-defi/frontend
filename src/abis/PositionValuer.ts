@@ -3,6 +3,19 @@
 export const positionValuerAbi = [
   {
     "type": "function",
+    "name": "stateView",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IStateView"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "value",
     "inputs": [
       {

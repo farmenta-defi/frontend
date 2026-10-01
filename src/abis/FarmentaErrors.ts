@@ -370,6 +370,17 @@ export const farmentaErrorsAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidAmount",
+    "inputs": [
+      {
+        "name": "maxAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidBorrowRecipient",
     "inputs": [
       {
@@ -410,6 +421,11 @@ export const farmentaErrorsAbi = [
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "LengthMismatch",
+    "inputs": []
   },
   {
     "type": "error",

@@ -8,6 +8,7 @@ import {
   collectFees,
   decreaseLiquidity,
   depositCollateral,
+  increaseLiquidity,
   repay,
   supply,
   withdraw,
@@ -26,6 +27,8 @@ import {
   withdrawGate,
 } from "@/lib/onchain/gates";
 import { readLenderState, readPosition, type Clients } from "@/lib/onchain/reads";
+import { readAddition } from "@/lib/onchain/addition";
+import { additionFor } from "@/lib/onchain/liquidity-math";
 import { DEFAULT_TOLERANCE_BPS, liquidityFor, minimumsFor, readRemoval } from "@/lib/onchain/removal";
 
 import { ETH_USDG, POSITIONS, userKey } from "./support/constants";
@@ -85,6 +88,13 @@ async function aQuarterOf(tokenId: bigint, account: `0x${string}`) {
   const liquidity = liquidityFor((await position(tokenId, account)).holdings!.liquidity, 25);
   const { quote } = await readRemoval(publicClient, market, tokenId, account, liquidity);
   return { liquidity, ...minimumsFor(quote, DEFAULT_TOLERANCE_BPS) };
+}
+
+/** A quarter more liquidity for a position, with the maximums of its quote: what the panel would send. */
+async function aQuarterMoreOn(tokenId: bigint, account: `0x${string}`) {
+  const quote = await readAddition(publicClient, market, tokenId, account, { share: 25 });
+  const { max0, max1 } = additionFor(quote.price, quote.range, quote.liquidity, DEFAULT_TOLERANCE_BPS);
+  return { liquidity: quote.liquidity, max0, max1 };
 }
 
 const lenderState = (account: `0x${string}`) => readLenderState(publicClient, market, account);
@@ -285,11 +295,12 @@ describe("a wallet on another network", () => {
   }
 
   describe("negative", () => {
-    it("cannot send any of the eight transactions", async () => {
+    it("cannot send any of the nine transactions", async () => {
       const { lender, borrower } = await marketInUse();
       await dealUsdg(borrower.address, 500n * USDG);
       const astray = { lender: walletOn(mainnet.id, "lender"), borrower: walletOn(mainnet.id, "borrower") };
       const quarter = await aQuarterOf(DEBT_FREE, borrower.address);
+      const more = await aQuarterMoreOn(DEBT_FREE, borrower.address);
       const lenderNonce = await nonceOf(lender.address);
       const borrowerNonce = await nonceOf(borrower.address);
 
@@ -304,6 +315,7 @@ describe("a wallet on another network", () => {
         () => withdrawCollateral(astray.borrower, blueChip, DEBT_FREE),
         () => collectFees(astray.borrower, blueChip, INDEBTED),
         () => decreaseLiquidity(astray.borrower, blueChip, DEBT_FREE, quarter),
+        () => increaseLiquidity(astray.borrower, blueChip, DEBT_FREE, more),
       ];
       for (const attempt of attempts) expect((await refusal(attempt())).code).toBe("WrongNetwork");
 
@@ -362,7 +374,7 @@ describe("with the backend down", () => {
   }
 
   describe("positive", () => {
-    it("all eight actions go through, over the RPC alone", async () => {
+    it("all nine actions go through, over the RPC alone", async () => {
       const lender = await newUser("lender");
       await dealUsdg(lender.address, 5_000n * USDG);
       const borrower = await newUser("borrower");
@@ -373,7 +385,9 @@ describe("with the backend down", () => {
       await depositCollateral(borrower.clients, blueChip, INDEBTED);
       await borrow(borrower.clients, blueChip, INDEBTED, 100n * USDG);
       await collectFees(borrower.clients, blueChip, INDEBTED);
-      // The quote is read through the same RPC.
+      // The quotes are read through the same RPC.
+      await dealUsdg(borrower.address, 2_000n * USDG);
+      await increaseLiquidity(borrower.clients, blueChip, INDEBTED, await aQuarterMoreOn(INDEBTED, borrower.address));
       await decreaseLiquidity(borrower.clients, blueChip, INDEBTED, await aQuarterOf(INDEBTED, borrower.address));
       await dealUsdg(borrower.address, 200n * USDG);
       await repay(borrower.clients, blueChip, INDEBTED, "max");

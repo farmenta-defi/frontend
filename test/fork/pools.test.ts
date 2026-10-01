@@ -1,7 +1,18 @@
 import { erc20Abi, maxUint256, zeroAddress } from "viem";
 import { describe, expect, it } from "vitest";
 
-import { borrow, collectFees, decreaseLiquidity, depositCollateral, repay, supply, withdrawCollateral } from "@/lib/onchain/actions";
+import {
+  borrow,
+  collectFees,
+  decreaseLiquidity,
+  depositCollateral,
+  increaseLiquidity,
+  repay,
+  supply,
+  withdrawCollateral,
+} from "@/lib/onchain/actions";
+import { readAddition } from "@/lib/onchain/addition";
+import { additionFor } from "@/lib/onchain/liquidity-math";
 import { describePosition } from "@/lib/onchain/describe";
 import { inPool, type Discovered } from "@/lib/onchain/discovery";
 import { ActionError, explainForPool } from "@/lib/onchain/errors";
@@ -24,6 +35,7 @@ import {
 } from "./support/constants";
 import {
   blueChip,
+  deal,
   dealUsdg,
   debtOf,
   givePosition,
@@ -283,6 +295,63 @@ describe.each(CASES)("$pool.id, $what", (listed) => {
       expect(after.place).toBe("collateral");
       expect(after.holdings).toMatchObject({ liquidity: before.holdings!.liquidity - liquidity, fees0: 0n, fees1: 0n });
       expect(after.risk!.healthFactor).toBeGreaterThan(10n ** 18n);
+    });
+
+    it(`${pair}: a quarter more liquidity is added to a position with a loan, for what was quoted, to the unit`, async () => {
+      const { user, refs } = await holder(listed);
+      await depositCollateral(user.clients, refs, tokenId);
+      await borrow(user.clients, refs, tokenId, 50n * USDG);
+      const usdgIsCurrency0 = pool.key.currency0.toLowerCase() === USDG_TOKEN.toLowerCase();
+      const base = usdgIsCurrency0 ? pool.key.currency1 : pool.key.currency0;
+      // Funds to add with: USDG, and the token paired with it. A new wallet holds 10 ETH already.
+      await dealUsdg(user.address, 10_000n * USDG);
+      if (base !== zeroAddress) await deal(base, user.address, 10n ** 30n);
+      const baseBalance = () =>
+        base === zeroAddress
+          ? publicClient.getBalance({ address: user.address })
+          : publicClient.readContract({ address: base, abi: erc20Abi, functionName: "balanceOf", args: [user.address] });
+
+      const before = await readPosition(publicClient, refs, tokenId, user.address);
+      const quote = await readAddition(publicClient, refs.market, tokenId, user.address, { share: 25 });
+      const { need0, need1, max0, max1 } = additionFor(quote.price, quote.range, quote.liquidity, 50);
+      const { fees0, fees1 } = before.holdings!;
+      const [usdgBefore, baseBefore] = [await usdgBalance(user.address), await baseBalance()];
+      const erc20s = [pool.key.currency0, pool.key.currency1].filter((currency) => currency !== zeroAddress);
+      const approved = () =>
+        Promise.all(
+          erc20s.map((token) =>
+            publicClient.readContract({ address: token, abi: erc20Abi, functionName: "allowance", args: [user.address, quote.permit2] }),
+          ),
+        );
+      const approvedBefore = await approved();
+      let gas = 0n;
+      const counting = {
+        ...user.clients,
+        publicClient: {
+          ...user.clients.publicClient,
+          waitForTransactionReceipt: async (args: { hash: `0x${string}` }) => {
+            const mined = await publicClient.waitForTransactionReceipt(args);
+            gas += mined.gasUsed * mined.effectiveGasPrice;
+            return mined;
+          },
+        },
+      } as never;
+
+      await increaseLiquidity(counting, refs, tokenId, { liquidity: quote.liquidity, max0, max1 });
+
+      // The pool took the need of each token, and the position's fees came back with the change.
+      const paid = usdgIsCurrency0 ? { usdg: need0 - fees0, base: need1 - fees1 } : { usdg: need1 - fees1, base: need0 - fees0 };
+      expect(usdgBefore - (await usdgBalance(user.address))).toBe(paid.usdg);
+      expect(baseBefore - (await baseBalance()) - (base === zeroAddress ? gas : 0n)).toBe(paid.base);
+
+      const after = await readPosition(publicClient, refs, tokenId, user.address);
+      expect(after.holdings).toMatchObject({ liquidity: before.holdings!.liquidity + quote.liquidity, fees0: 0n, fees1: 0n });
+      expect(after.risk!.healthFactor).toBeGreaterThan(before.risk!.healthFactor);
+      // Nothing more is approved to Permit2 than before: the approval was for the maximum, and
+      // Permit2 pulled the maximum. USDG starts and ends at zero. A token that gives Permit2 an
+      // allowance of its own accord (AI does, without limit) is not approved by the app at all.
+      expect(await approved()).toEqual(approvedBefore);
+      expect(approvedBefore[erc20s.findIndex((token) => token.toLowerCase() === USDG_TOKEN.toLowerCase())]).toBe(0n);
     });
 
     it(`${pair}: the position is shown by what it holds of each token, and priced in USDG`, async () => {
