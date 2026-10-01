@@ -1,6 +1,6 @@
 import type { Address, Hex } from "viem";
 
-import { MIN_DEBT_USDG, usdgToNumber } from "@/lib/units";
+import { usdgToNumber } from "@/lib/units";
 
 import { samePool } from "./contracts";
 import type { Explained } from "./errors";
@@ -101,12 +101,6 @@ export function borrowGate(position: PositionState, amount: Amount): Gate {
     return refuse(position.riskError?.code ?? "PriceUnavailable", position.riskError?.message ?? "This position cannot be priced right now.");
   }
   if (missing(amount)) return NO_AMOUNT;
-  if (position.debt + amount < MIN_DEBT_USDG) {
-    return refuse(
-      "BorrowBelowMinimum",
-      `A loan must owe at least ${amountOf(MIN_DEBT_USDG)}. This would leave it at ${amountOf(position.debt + amount)}; borrow more.`,
-    );
-  }
   if (amount > position.risk.maxBorrow) {
     return refuse("BorrowExceedsMaxLtv", `This position can borrow up to ${amountOf(position.risk.maxBorrow)} more.`);
   }

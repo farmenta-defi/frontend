@@ -1,5 +1,13 @@
 # Recorded answers
 
+**Every answer here was recorded against the first mainnet deployment (28 Sep 2026), which the
+deployment of 1 Oct 2026 replaced.** The market addresses in them (`0x1f69…5484` Blue-chip,
+`0x992c…E751` Meme) are that deployment's and are not in `deployments/mainnet.json` any more,
+and the pools carry the $50 minimum position of that deployment, where the listings now carry
+$5. They are kept because the shape of the answers has not changed, and because the new
+markets have no history yet to record: a pool's half-hourly history, a wallet's supplies and
+withdrawal. Record them again once the new markets have that.
+
 These files are answers of the live backend (`backend` `main` `ff25486`), recorded on
 29 Sep 2026 at 06:03 UTC and only re-indented. The data layer's tests read them, so a test
 fails when the app stops understanding what the backend really sends.
