@@ -4,21 +4,46 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
 import { ActionButton, ActionNote, FEES_ARE_COLLATERAL } from "@/components/app/action-controls";
+import { Segmented } from "@/components/ui/segmented";
 import { HoldingsLine, RangeLine } from "@/components/app/position-picker";
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { sanitizeAmount } from "@/components/ui/field";
 import { hfLabel, hfTone } from "@/components/ui/health-bar";
-import { fmtUsd, fmtUsdExact, fmtUsdg, orDash } from "@/lib/format";
-import { COLLATERAL_POOLS, MARKETS, poolById, poolHref } from "@/lib/markets";
-import { collectFees, repay, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
+import { fmtAmount, fmtUsd, fmtUsdExact, fmtUsdg, orDash } from "@/lib/format";
+import { COLLATERAL_POOLS, MARKETS, poolById, poolHref, type CollateralPool } from "@/lib/markets";
+import { collectFees, decreaseLiquidity, repay, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
 import { samePool } from "@/lib/onchain/contracts";
-import { describePosition, feesInWords } from "@/lib/onchain/describe";
-import { explainForPool } from "@/lib/onchain/errors";
+import { describePosition, feesInWords, inPairOrder } from "@/lib/onchain/describe";
+import { explainForPool, explainRemovalError } from "@/lib/onchain/errors";
 import { listState, unreadNote } from "@/lib/onchain/list-status";
-import { collectFeesGate, repayGate, withdrawCollateralGate, withdrawGate, type Gate } from "@/lib/onchain/gates";
-import { useAction, useLenderState, usePositions, useSession, useWalletPositions } from "@/lib/onchain/hooks";
+import {
+  collectFeesGate,
+  decreaseLiquidityGate,
+  repayGate,
+  withdrawCollateralGate,
+  withdrawGate,
+  type Gate,
+} from "@/lib/onchain/gates";
+import {
+  useAction,
+  useLenderState,
+  usePositions,
+  useRemoval,
+  useSession,
+  useWalletPositions,
+  type Session,
+} from "@/lib/onchain/hooks";
+import {
+  DEFAULT_TOLERANCE_BPS,
+  liquidityFor,
+  minimumsFor,
+  parseTolerance,
+  REMOVAL_SHARES,
+  TOLERANCE_WARNING_ABOVE_BPS,
+  type RemovalShare,
+} from "@/lib/onchain/removal";
 import type { PositionState } from "@/lib/onchain/reads";
 import type { MarketTier } from "@/lib/risk-params";
 import { formatUsdg, healthFactorToNumber, parseUsdg, usdgToNumber, wadToNumber } from "@/lib/units";
@@ -27,8 +52,8 @@ import { cn } from "@/lib/utils";
 /**
  * What a wallet holds in Farmenta, with the actions that take it out again:
  * withdrawing USDG from a market, repaying a loan and withdrawing its
- * collateral, and collecting the fees a deposited position has earned. Every
- * figure here is read from the chain.
+ * collateral, collecting the fees a deposited position has earned, and
+ * removing part of its liquidity. Every figure here is read from the chain.
  */
 const marketName = (tier: MarketTier) => MARKETS.find((market) => market.id === tier)!.name;
 const usdg = (amount: bigint) => `${fmtUsdg(usdgToNumber(amount))} USDG`;
@@ -182,12 +207,176 @@ export function SupplyPosition({ tier }: { tier: MarketTier }) {
 /** The pool a position belongs to, when the app lists it. */
 const poolOf = (position: PositionState) => poolById(position.poolId);
 
+/** Shown while a gate has no quote to decide on yet. */
+const QUOTING: Gate = { ok: false, code: "Loading", message: "" };
+
+/**
+ * Removing part of a deposited position's liquidity (FAR-73): a share of it, the tolerance, and
+ * what each token pays: the principal the pool would give now, the fees that leave with it, and
+ * the least principal the transaction accepts. The quote is the chain's, read again every 15
+ * seconds; the minimums sent are the ones on screen, and a price that moved past them sends
+ * nothing and asks for a new quote.
+ */
+function RemoveLiquidity({
+  tier,
+  position,
+  pool,
+  session,
+  action,
+}: {
+  tier: MarketTier;
+  position: PositionState;
+  pool: CollateralPool | null;
+  session: Session;
+  action: ReturnType<typeof useAction>;
+}) {
+  const [share, setShare] = useState<RemovalShare>(25);
+  const [toleranceText, setToleranceText] = useState((DEFAULT_TOLERANCE_BPS / 100).toString());
+  const toleranceBps = parseTolerance(toleranceText);
+
+  const before = decreaseLiquidityGate(position, toleranceBps);
+  const liquidity = position.holdings ? liquidityFor(position.holdings.liquidity, share) : null;
+  // Asked for whatever the tolerance says: a tolerance being typed is no reason to hide the quote.
+  const removal = useRemoval(tier, position.tokenId, position.place === "collateral" && !position.paused ? liquidity : null);
+  const quote = removal.data?.quote ?? null;
+  const minimums = quote && toleranceBps !== null ? minimumsFor(quote, Math.min(toleranceBps, 10_000)) : null;
+
+  // No quote is an answer too: the reason the removal cannot be made at all, or that the chain did not answer.
+  const refused = removal.data?.refusal ?? (removal.error ? explainRemovalError(removal.error) : null);
+  const gate: Gate = !before.ok ? before : refused ? { ok: false, ...refused } : !quote || !minimums ? QUOTING : { ok: true };
+
+  const symbol = pool?.base.symbol ?? "tokens";
+  const principal = quote ? inPairOrder(position, quote.principal0, quote.principal1) : null;
+  const least = minimums ? inPairOrder(position, minimums.min0, minimums.min1) : null;
+  const { fees } = describePosition(position);
+  const moved = action.state.status === "failed" && action.state.error.code === "MinimumAmountInsufficient";
+  const cell = (value: number | undefined) => (value === undefined ? "—" : fmtAmount(value));
+
+  return (
+    <div className="mt-4 border-t border-border/70 pt-4">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <Segmented
+          label="Share of the liquidity to remove"
+          value={String(share)}
+          options={REMOVAL_SHARES.map((value) => ({ id: String(value), label: `${value}%` }))}
+          onChange={(next) => {
+            setShare(Number(next) as RemovalShare);
+            action.reset();
+          }}
+        />
+        <label className="flex items-center gap-2 text-[12px] text-steel-400">
+          Slippage tolerance
+          <input
+            inputMode="decimal"
+            value={toleranceText}
+            disabled={action.busy}
+            aria-invalid={!before.ok && ["NoTolerance", "ToleranceTooHigh"].includes(before.code)}
+            onChange={(event) => {
+              setToleranceText(event.target.value.replace(/[^0-9.]/g, ""));
+              action.reset();
+            }}
+            className="focus-ring tnum h-9 w-16 rounded-lg border border-border bg-transparent px-2 text-right text-[13px] text-foreground outline-none disabled:opacity-45"
+          />
+          %
+        </label>
+      </div>
+
+      <table className="mt-4 w-full max-w-[560px] border-collapse text-left text-[12.5px]">
+        <thead>
+          <tr className="text-steel-500">
+            <th scope="col" className="py-1 pr-4 font-normal">
+              You receive
+            </th>
+            <th scope="col" className="py-1 pr-4 text-right font-normal">
+              Principal
+            </th>
+            <th scope="col" className="py-1 pr-4 text-right font-normal">
+              Fees
+            </th>
+            <th scope="col" className="py-1 text-right font-normal">
+              Principal, at least
+            </th>
+          </tr>
+        </thead>
+        <tbody className="tnum text-foreground">
+          {(
+            [
+              [symbol, "base"],
+              ["USDG", "usdg"],
+            ] as const
+          ).map(([name, side]) => (
+            <tr key={side}>
+              <th scope="row" className="py-1 pr-4 font-medium">
+                {name}
+              </th>
+              <td className="py-1 pr-4 text-right">{cell(principal?.[side])}</td>
+              <td className="py-1 pr-4 text-right">{cell(fees?.[side])}</td>
+              <td className="py-1 text-right">{cell(least?.[side])}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <p className="mt-3 max-w-[640px] text-[12px] leading-[18px] text-steel-400">
+        The principal is what the pool pays at its price now, and every fee the position has earned leaves with it. What
+        stays has to be worth the pool&apos;s minimum, so the whole position does not come out this way: for that, repay
+        the loan and withdraw the collateral.
+      </p>
+      {position.debt > 0n && (
+        <p className="mt-2 text-[11px] leading-[17px] text-warn">
+          The market lends against this liquidity and its fees. Removing them lowers this loan&apos;s health factor, and
+          the loan has to fit what is left.
+        </p>
+      )}
+      {before.ok && toleranceBps !== null && toleranceBps > TOLERANCE_WARNING_ABOVE_BPS && (
+        <p className="mt-2 text-[11px] leading-[17px] text-warn">
+          A tolerance above 1% lets the removal go through at a price that has moved that far against you.
+        </p>
+      )}
+      {!gate.ok && gate.message && session.gate.ok && (
+        <p className="mt-2 text-[11px] leading-[17px] text-warn">{explainForPool(gate, pool).message}</p>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <ActionButton
+          session={session}
+          gate={gate}
+          busy={action.busy}
+          size="sm"
+          label={`Remove ${share}% of the liquidity`}
+          onClick={() => {
+            if (!quote || !minimums) return;
+            void action.run(
+              `Removed ${share}% of the liquidity. It is in your wallet, with the fees.`,
+              (clients, refs, onStep) => decreaseLiquidity(clients, refs, position.tokenId, { liquidity: quote.liquidity, ...minimums }, onStep),
+              position.poolId,
+            );
+          }}
+        />
+        {/* The tolerance stays as the user set it: a price that moved is answered with a new quote. */}
+        {moved && (
+          <button
+            type="button"
+            onClick={() => {
+              action.reset();
+              void removal.refetch();
+            }}
+            className={buttonClasses({ variant: "secondary", size: "sm" })}
+          >
+            Get a new quote
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BorrowPosition({ tier, position }: { tier: MarketTier; position: PositionState }) {
   const session = useSession();
   const action = useAction(tier);
-  // One panel under the row at a time: the repayment's or the fees'.
-  const [panel, setPanel] = useState<"repay" | "fees" | null>(null);
-  const toggle = (next: "repay" | "fees") => {
+  // One panel under the row at a time: the repayment's, the fees' or the liquidity's.
+  const [panel, setPanel] = useState<"repay" | "fees" | "liquidity" | null>(null);
+  const toggle = (next: "repay" | "fees" | "liquidity") => {
     setPanel(panel === next ? null : next);
     action.reset();
   };
@@ -265,6 +454,14 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
               Collect fees
             </button>
           )}
+          <button
+            type="button"
+            aria-expanded={panel === "liquidity"}
+            onClick={() => toggle("liquidity")}
+            className={buttonClasses({ variant: "secondary", size: "sm" })}
+          >
+            Remove liquidity
+          </button>
           <ActionButton
             session={session}
             gate={exit}
@@ -315,6 +512,7 @@ function BorrowPosition({ tier, position }: { tier: MarketTier; position: Positi
           {position.debt > 0n && <p className="mt-2 text-[11px] leading-[17px] text-warn">{FEES_ARE_COLLATERAL}</p>}
         </div>
       )}
+      {panel === "liquidity" && <RemoveLiquidity tier={tier} position={position} pool={pool} session={session} action={action} />}
       {panel === "repay" && position.debt > 0n && (
         <AmountAction
           id={`repay-${position.tokenId}`}

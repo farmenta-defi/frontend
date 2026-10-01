@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { farmentaErrorsAbi } from "@/abis/FarmentaErrors";
 
 import { marketAbi } from "./contracts";
-import { ActionError, explainError, explainForPool, explainRevertData, toActionError } from "./errors";
+import { ActionError, explainError, explainForPool, explainRemovalError, explainRevertData, toActionError } from "./errors";
 
 const POOL = "0x54f7883914619af9105355bf83ed678bcf9f63560218ac61c9963b9503d0ba32";
 
@@ -32,7 +32,7 @@ describe("explainError", () => {
   describe("positive", () => {
     it("names every error FAR-72 lists and says what to do about it", () => {
       const cases: [string, readonly unknown[], RegExp][] = [
-        ["EnforcedPause", [], /paused.*collecting fees are stopped/],
+        ["EnforcedPause", [], /paused.*collecting fees and removing liquidity are stopped/],
         ["PoolFrozenForNewPositions", [POOL], /frozen.*no new collateral/],
         ["PoolNotOpenForBorrowing", [POOL], /frozen.*no new loans/],
         ["BorrowExceedsMaxLtv", [700n * 10n ** 18n, 650n * 10n ** 18n], /\$700.*\$650/],
@@ -196,6 +196,67 @@ describe("explainForPool", () => {
     it("leaves the error alone where the pool is not known", () => {
       expect(explainForPool(stale, null)).toEqual(stale);
       expect(explainForPool(stale, undefined)).toEqual(stale);
+    });
+  });
+});
+
+describe("the errors of a removal of liquidity", () => {
+  const WAD = 10n ** 18n;
+
+  describe("positive", () => {
+    it("says what to do about a loan that would not fit what is left", () => {
+      const explained = explainRemovalError(revertWith("RemovalExceedsBorrowLimit", [123n, 300n * WAD, 250n * WAD]));
+
+      expect(explained.code).toBe("RemovalExceedsBorrowLimit");
+      expect(explained.message).toMatch(/loan of \$250.*this one is \$300/);
+      expect(explained.message).toMatch(/Remove less, or repay until the loan fits/);
+    });
+
+    it("points at a repayment and a withdrawal of the collateral where too little would be left", () => {
+      const explained = explainRemovalError(revertWith("PositionBelowMinimum", [4n * WAD, 5n * WAD]));
+
+      expect(explained.code).toBe("PositionBelowMinimum");
+      expect(explained.message).toMatch(/left is worth \$4.*\$5 minimum/);
+      expect(explained.message).toMatch(/Remove less.*repay the loan and withdraw the collateral/);
+    });
+
+    it("asks for a new quote when the price moved past the minimums, and names no tolerance", () => {
+      const explained = explainRemovalError(revertWith("MinimumAmountInsufficient", [100n, 99n]));
+
+      expect(explained.code).toBe("MinimumAmountInsufficient");
+      expect(explained.message).toMatch(/price moved.*Get a new quote/);
+      expect(explained.message).not.toMatch(/tolerance/i);
+    });
+  });
+
+  describe("negative", () => {
+    it("names the rest of what the market refuses a removal with", () => {
+      const cases: [string, readonly unknown[], RegExp][] = [
+        ["LiquidityExceedsPosition", [123n, 2n, 1n], /holds less liquidity/],
+        ["ZeroLiquidity", [], /how much of the liquidity/],
+        ["NotTheDepositor", [123n, zeroAddress], /remove its liquidity/],
+        ["InvalidRecipient", [zeroAddress], /receive the liquidity/],
+        ["EnforcedPause", [], /removing liquidity are stopped/],
+      ];
+      for (const [name, args, expected] of cases) {
+        const explained = explainRemovalError(revertWith(name, args));
+        expect(explained.code, name).toBe(name);
+        expect(explained.message, name).toMatch(expected);
+      }
+    });
+  });
+
+  describe("edge case", () => {
+    it("leaves the same error in a deposit's words everywhere else", () => {
+      const depositing = explainError(revertWith("PositionBelowMinimum", [4n * WAD, 5n * WAD]));
+
+      expect(depositing.message).toMatch(/minimum for collateral/);
+      expect(depositing.message).not.toMatch(/Remove less/);
+    });
+
+    it("keeps an error that is already explained as it is", () => {
+      const refused = new ActionError({ code: "QuoteUnavailable", message: "no quote" });
+      expect(explainRemovalError(refused)).toEqual({ code: "QuoteUnavailable", message: "no quote" });
     });
   });
 });

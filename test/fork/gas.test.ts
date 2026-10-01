@@ -5,6 +5,7 @@ import {
   ACCRUAL_GAS,
   borrow,
   collectFees,
+  decreaseLiquidity,
   depositCollateral,
   gasLimitFor,
   repay,
@@ -14,7 +15,8 @@ import {
 } from "@/lib/onchain/actions";
 import { marketAbi } from "@/lib/onchain/contracts";
 import { signCollateralPermit } from "@/lib/onchain/permit";
-import type { Clients } from "@/lib/onchain/reads";
+import { readPosition, type Clients } from "@/lib/onchain/reads";
+import { liquidityFor } from "@/lib/onchain/removal";
 
 import { POSITIONS, USDG as USDG_TOKEN } from "./support/constants";
 import { anvil, blueChip, dealUsdg, givePosition, isolateEachTest, newUser, publicClient } from "./support/fork";
@@ -174,12 +176,15 @@ describe("the gas limit, when the estimate was taken in the second of an accrual
 
     it("the app's own actions send with that limit, and are mined", async () => {
       const { lender, borrower } = await marketWithALoan();
+      const held = (await readPosition(publicClient, blueChip, LOAN, borrower.address)).holdings!.liquidity;
+      const quarter = { liquidity: liquidityFor(held, 25), min0: 0n, min1: 0n };
       const actions: [string, Clients, (clients: Clients) => Promise<{ status: string; gasUsed: bigint }>][] = [
         ["supply", lender.clients, (clients) => supply(clients, blueChip, 200n * USDG)],
         ["withdraw", lender.clients, (clients) => withdraw(clients, blueChip, 200n * USDG)],
         ["borrow", borrower.clients, (clients) => borrow(clients, blueChip, LOAN, 50n * USDG)],
         // Before the repayment: with no loan left in the market an accrual has nothing to write.
         ["collectFees", borrower.clients, (clients) => collectFees(clients, blueChip, LOAN)],
+        ["decreaseLiquidity", borrower.clients, (clients) => decreaseLiquidity(clients, blueChip, LOAN, quarter)],
         ["withdrawCollateral", borrower.clients, (clients) => withdrawCollateral(clients, blueChip, SPARE)],
         ["repay", borrower.clients, (clients) => repay(clients, blueChip, LOAN, "max")],
       ];

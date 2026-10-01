@@ -37,6 +37,11 @@ const BLOCKED: Record<string, string> = {
   OutstandingDebt: "Repay the loan first",
   NoDebt: "Nothing to repay",
   NoFees: "No fees to collect",
+  NoTolerance: "Enter a tolerance",
+  ToleranceTooHigh: "Tolerance above 5%",
+  PositionBelowMinimum: "Too little would be left",
+  RemovalExceedsBorrowLimit: "Over the borrow limit",
+  QuoteUnavailable: "No quote",
   StalePrice: "Price unavailable",
   InvalidPrice: "Price unavailable",
   MemeTwapUnavailable: "Price unavailable",
@@ -57,6 +62,7 @@ const STEP: Record<Step["name"], Record<Step["phase"], string>> = {
     confirm: "Waiting for the withdrawal to confirm.",
   },
   collectFees: { sign: "Confirm the collection in your wallet.", confirm: "Waiting for the collection to confirm." },
+  decreaseLiquidity: { sign: "Confirm the removal in your wallet.", confirm: "Waiting for the removal to confirm." },
 };
 
 /**

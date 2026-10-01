@@ -5,6 +5,7 @@ import {
   entryGate,
   borrowGate,
   collectFeesGate,
+  decreaseLiquidityGate,
   depositCollateralGate,
   repayGate,
   sessionGate,
@@ -178,7 +179,7 @@ describe("depositCollateralGate", () => {
     });
 
     it("takes a position that was valued, whatever an earlier reading failed with", () => {
-      const holdings = { amount0: 1n, amount1: 1n, fees0: 0n, fees1: 0n, principalUsd: 100n * 10n ** 18n, feesUsd: 0n };
+      const holdings = { liquidity: 1_000n, amount0: 1n, amount1: 1n, fees0: 0n, fees1: 0n, principalUsd: 100n * 10n ** 18n, feesUsd: 0n };
 
       expect(depositCollateralGate(inWallet({ holdings, holdingsError: null }), POOL)).toEqual({ ok: true });
     });
@@ -290,7 +291,7 @@ describe("collectFeesGate", () => {
   const WAD = 10n ** 18n;
   /** Fees in each of the pool's two tokens. The USD figure follows them, as the valuer's does. */
   const holdings = (fees0: bigint, fees1 = 0n) => ({
-    amount0: 1n,
+    liquidity: 1_000n, amount0: 1n,
     amount1: 1n,
     fees0,
     fees1,
@@ -350,6 +351,59 @@ describe("collectFeesGate", () => {
 
     it("goes by the tokens and not by their value: fees worth less than the valuer can price are still collected", () => {
       expect(collectFeesGate(earning({ holdings: { ...holdings(0n, 1n), feesUsd: 0n } }))).toEqual({ ok: true });
+    });
+  });
+});
+
+describe("decreaseLiquidityGate", () => {
+  const priced = (over: Partial<PositionState> = {}) =>
+    collateral({
+      holdings: { liquidity: 1_000n, amount0: 1n, amount1: 1n, fees0: 0n, fees1: 0n, principalUsd: 400n * 10n ** 18n, feesUsd: 0n },
+      ...over,
+    });
+
+  describe("positive", () => {
+    it("opens for priced collateral at the default tolerance, with a loan and without", () => {
+      expect(decreaseLiquidityGate(priced(), 50)).toEqual({ ok: true });
+      expect(decreaseLiquidityGate(priced({ debt: 0n }), 50)).toEqual({ ok: true });
+    });
+  });
+
+  describe("negative", () => {
+    it("refuses a position that is not the wallet's collateral", () => {
+      expect(code(decreaseLiquidityGate(inWallet(), 50))).toBe("NotTheDepositor");
+    });
+
+    it("stops while the market is paused", () => {
+      const gate = decreaseLiquidityGate(priced({ paused: true }), 50);
+      expect(code(gate)).toBe("EnforcedPause");
+      expect(gate.ok === false && gate.message).toMatch(/paused.*removing liquidity/);
+    });
+
+    it("refuses a tolerance above 5%, and one that is not a number", () => {
+      expect(code(decreaseLiquidityGate(priced(), 501))).toBe("ToleranceTooHigh");
+      expect(code(decreaseLiquidityGate(priced(), null))).toBe("NoTolerance");
+    });
+
+    it("needs a price even without a loan: the market values what is left against the pool's minimum", () => {
+      const stale = { code: "StalePrice", message: "stale" };
+      const unpriced = priced({ debt: 0n, holdings: null, holdingsError: stale, risk: null });
+      expect(decreaseLiquidityGate(unpriced, 50)).toEqual({ ok: false, ...stale });
+      expect(code(decreaseLiquidityGate(priced({ risk: null, riskError: stale }), 50))).toBe("StalePrice");
+    });
+  });
+
+  describe("edge case", () => {
+    it("stays open while the pool is frozen", () => {
+      expect(decreaseLiquidityGate(priced({ pool: { status: "frozen", terms: null } }), 50)).toEqual({ ok: true });
+    });
+
+    it("takes 5% exactly, 1%, and zero", () => {
+      for (const bps of [500, 100, 0]) expect(decreaseLiquidityGate(priced(), bps), String(bps)).toEqual({ ok: true });
+    });
+
+    it("says the market is paused before it says anything about the tolerance", () => {
+      expect(code(decreaseLiquidityGate(priced({ paused: true }), null))).toBe("EnforcedPause");
     });
   });
 });

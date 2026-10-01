@@ -40,19 +40,23 @@ export type PositionDescription = {
   fees: { base: number; usdg: number } | null;
 };
 
-/** Two amounts of the pool's currencies as the pair names them: the other token first, USDG second. */
-function byPair(
-  position: PositionState,
-  pick: (holdings: NonNullable<PositionState["holdings"]>) => readonly [bigint, bigint],
+/**
+ * An amount of each of the pool's currencies, in whole tokens and as the pair
+ * names them: the other token first, USDG second. `null` when the position's
+ * pool is not known or neither currency is USDG.
+ */
+export function inPairOrder(
+  position: Pick<PositionState, "poolKey" | "decimals" | "asset">,
+  of0: bigint,
+  of1: bigint,
 ): { base: number; usdg: number } | null {
-  const { poolKey, holdings, decimals } = position;
-  if (!poolKey || !holdings || !decimals) return null;
+  const { poolKey, decimals } = position;
+  if (!poolKey || !decimals) return null;
 
   const usdg = position.asset.toLowerCase();
   const usdgIsCurrency0 = poolKey.currency0.toLowerCase() === usdg;
   if (!usdgIsCurrency0 && poolKey.currency1.toLowerCase() !== usdg) return null;
 
-  const [of0, of1] = pick(holdings);
   const amount0 = Number(formatUnits(of0, decimals[0]));
   const amount1 = Number(formatUnits(of1, decimals[1]));
   return usdgIsCurrency0 ? { base: amount1, usdg: amount0 } : { base: amount0, usdg: amount1 };
@@ -97,7 +101,7 @@ export function describePosition(position: PositionState): PositionDescription {
     inRange,
     valueUsd,
     feesUsd: position.holdings ? wadToNumber(position.holdings.feesUsd) : null,
-    amounts: byPair(position, (holdings) => [holdings.amount0, holdings.amount1]),
-    fees: byPair(position, (holdings) => [holdings.fees0, holdings.fees1]),
+    amounts: position.holdings ? inPairOrder(position, position.holdings.amount0, position.holdings.amount1) : null,
+    fees: position.holdings ? inPairOrder(position, position.holdings.fees0, position.holdings.fees1) : null,
   };
 }

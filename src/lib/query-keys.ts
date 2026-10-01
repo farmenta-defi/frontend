@@ -40,6 +40,9 @@ export const chainKeys = {
   positions: (account: Address) => ["chain", "positions", lower(account)] as const,
   position: (tier: MarketTier, tokenId: bigint, account: Address) =>
     ["chain", "position", tier, tokenId.toString(), lower(account)] as const,
+  /** What removing `liquidity` from a deposited position would pay. */
+  removal: (tier: MarketTier, tokenId: bigint, account: Address, liquidity: bigint) =>
+    ["chain", "removal", tier, tokenId.toString(), lower(account), liquidity.toString()] as const,
 };
 
 /**

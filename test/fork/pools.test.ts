@@ -1,12 +1,13 @@
 import { erc20Abi, maxUint256, zeroAddress } from "viem";
 import { describe, expect, it } from "vitest";
 
-import { borrow, collectFees, depositCollateral, repay, supply, withdrawCollateral } from "@/lib/onchain/actions";
+import { borrow, collectFees, decreaseLiquidity, depositCollateral, repay, supply, withdrawCollateral } from "@/lib/onchain/actions";
 import { describePosition } from "@/lib/onchain/describe";
 import { inPool, type Discovered } from "@/lib/onchain/discovery";
 import { ActionError, explainForPool } from "@/lib/onchain/errors";
 import { borrowGate, collectFeesGate, depositCollateralGate, repayGate, withdrawCollateralGate } from "@/lib/onchain/gates";
 import { readPool, readPosition, type MarketRefs } from "@/lib/onchain/reads";
+import { DEFAULT_TOLERANCE_BPS, liquidityFor, minimumsFor, readRemoval } from "@/lib/onchain/removal";
 import { COLLATERAL_POOLS, poolById } from "@/lib/markets";
 
 import {
@@ -248,6 +249,40 @@ describe.each(CASES)("$pool.id, $what", (listed) => {
       expect(after.debt).toBeGreaterThanOrEqual(50n * USDG);
       expect(after.risk!.healthFactor).toBeGreaterThan(10n ** 18n);
       expect(collectFeesGate(after)).toMatchObject({ ok: false, code: "NoFees" });
+    });
+
+    it(`${pair}: a quarter of the liquidity of a position with a loan is removed, at the default tolerance`, async () => {
+      const { user, refs } = await holder(listed);
+      await depositCollateral(user.clients, refs, tokenId);
+      await borrow(user.clients, refs, tokenId, 50n * USDG);
+      const before = await readPosition(publicClient, refs, tokenId, user.address);
+      const liquidity = liquidityFor(before.holdings!.liquidity, 25);
+      const { quote, refusal: refused } = await readRemoval(publicClient, refs.market, tokenId, user.address, liquidity);
+      expect(refused).toBeNull();
+
+      const usdgIsCurrency0 = pool.key.currency0.toLowerCase() === USDG_TOKEN.toLowerCase();
+      const base = usdgIsCurrency0 ? pool.key.currency1 : pool.key.currency0;
+      const baseBalance = () =>
+        base === zeroAddress
+          ? publicClient.getBalance({ address: user.address })
+          : publicClient.readContract({ address: base, abi: erc20Abi, functionName: "balanceOf", args: [user.address] });
+      const baseBefore = await baseBalance();
+      // What the panel shows before the removal: the principal the pool quotes and the fees, of each token.
+      const { fees0, fees1 } = before.holdings!;
+      const shown = usdgIsCurrency0
+        ? { usdg: quote.principal0 + fees0, base: quote.principal1 + fees1 }
+        : { usdg: quote.principal1 + fees1, base: quote.principal0 + fees0 };
+
+      const receipt = await decreaseLiquidity(user.clients, refs, tokenId, { liquidity, ...minimumsFor(quote, DEFAULT_TOLERANCE_BPS) });
+
+      const gas = base === zeroAddress ? receipt.gasUsed * receipt.effectiveGasPrice : 0n;
+      const gained = { usdg: (await usdgBalance(user.address)) - 50n * USDG, base: (await baseBalance()) + gas - baseBefore };
+      expect(gained).toEqual(shown);
+
+      const after = await readPosition(publicClient, refs, tokenId, user.address);
+      expect(after.place).toBe("collateral");
+      expect(after.holdings).toMatchObject({ liquidity: before.holdings!.liquidity - liquidity, fees0: 0n, fees1: 0n });
+      expect(after.risk!.healthFactor).toBeGreaterThan(10n ** 18n);
     });
 
     it(`${pair}: the position is shown by what it holds of each token, and priced in USDG`, async () => {

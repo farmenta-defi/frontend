@@ -15,6 +15,7 @@ import { POSITION_MANAGER_START_BLOCK, walletPositionsQuery } from "./discovery"
 import { explainError, type Explained } from "./errors";
 import { sessionGate, type Gate } from "./gates";
 import { readLenderState, readPosition, type Clients, type MarketRefs, type ReadClient } from "./reads";
+import { readRemoval } from "./removal";
 
 /**
  * The React side of the on-chain actions: who is connected and whether they
@@ -104,6 +105,26 @@ export function usePosition(tier: MarketTier, tokenId: bigint | null) {
 export function usePositions(tier: MarketTier, tokenIds: readonly bigint[]) {
   const { account, publicClient } = useSession();
   return useQueries({ queries: tokenIds.map((tokenId) => positionQuery(tier, tokenId, account, publicClient)) });
+}
+
+/**
+ * What removing `liquidity` from a deposited position would pay, and whether the market would
+ * take the removal. Read again every 15 seconds while the panel is open, and at once when the
+ * amount changes: the minimums the transaction is sent with come from the quote on screen.
+ * `liquidity` is `null` while there is nothing to quote.
+ */
+export function useRemoval(tier: MarketTier, tokenId: bigint, liquidity: bigint | null) {
+  const { account, publicClient } = useSession();
+  const refs = marketRefs(tier);
+
+  return useQuery({
+    queryKey: chainKeys.removal(tier, tokenId, account ?? "0x", liquidity ?? 0n),
+    queryFn: () => readRemoval(publicClient!, refs!.market, tokenId, account!, liquidity!),
+    enabled: Boolean(refs && account && publicClient && liquidity !== null && liquidity > 0n),
+    refetchInterval: REFRESH_MS,
+    // A refusal is an answer. Asking the same block again gives the same one.
+    retry: false,
+  });
 }
 
 /* ------------------------------------------------------------------ */

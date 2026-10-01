@@ -49,6 +49,11 @@ export type ActivityRow = {
   tokenId: string | null;
   /** A liquidation only: whether the position was seized whole. `null` otherwise. */
   fullSeizure: boolean | null;
+  /**
+   * A change of liquidity only: whether the position's fees were paid out in
+   * the same transaction. Set by `foldFees`, which takes their row away.
+   */
+  withFees?: boolean;
   transactionHash: Hex;
 };
 
@@ -134,6 +139,28 @@ export function historyRows<Row extends { id: string }>(pages: readonly { rows: 
   return pages
     .flatMap((page) => page.rows)
     .filter((row) => (seen.has(row.id) ? false : (seen.add(row.id), true)));
+}
+
+/**
+ * One transaction that changes a position's liquidity is one row (FAR-73).
+ * The market pays the position's fees out with it and logs both, `CollectFees`
+ * and then `LiquidityChanged`, so the backend sends two rows. The fees' row is
+ * folded into the liquidity's, which then says that the fees came with it.
+ * Fees collected on their own keep their row.
+ *
+ * Over every row read so far, not a page at a time: the two logs are next to
+ * each other, and a page can end between them. Until the page with the fees'
+ * row is read, the liquidity's row stands without the mention.
+ */
+export function foldFees<Row extends ActivityRow>(rows: readonly Row[]): Row[] {
+  const isLiquidity = (row: Row) => row.kind === "liquidity-decrease" || row.kind === "liquidity-increase";
+  const of = (row: Row) => `${row.transactionHash.toLowerCase()}:${row.tokenId}`;
+
+  const changed = new Set(rows.filter(isLiquidity).map(of));
+  const paid = new Set(rows.filter((row) => row.kind === "fees-collect" && changed.has(of(row))).map(of));
+  return rows
+    .filter((row) => !(row.kind === "fees-collect" && changed.has(of(row))))
+    .map((row) => (isLiquidity(row) && paid.has(of(row)) ? { ...row, withFees: true } : row));
 }
 
 const LABELS: Record<ActivityKind, string> = {

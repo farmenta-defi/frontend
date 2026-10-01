@@ -121,6 +121,39 @@ export const farmentaMarketAbi = [
   },
   {
     "type": "function",
+    "name": "decreaseLiquidity",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "liq",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "min0",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "min1",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "deposit",
     "inputs": [
       {
