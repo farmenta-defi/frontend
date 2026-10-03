@@ -77,22 +77,53 @@ export function SiteNav({ variant = "app" }: { variant?: "landing" | "app" }) {
 
         <div className="ml-auto hidden items-center gap-3 md:flex">
           {variant === "landing" ? (
-            <Link href="/market" className={buttonClasses({ variant: "primary", size: "sm" })}>
-              Open app
-              <ArrowRight className="size-4" strokeWidth={2} />
-            </Link>
+            <>
+              <a
+                href="https://x.com/farmentafun"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Farmenta on X"
+                title="Farmenta on X"
+                className="focus-ring rounded-md p-2 text-steel-300 transition-colors hover:text-foreground"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 fill-current">
+                  <path d="M18.9 1.2h3.7l-8.1 9.2 9.5 12.5h-7.4l-5.8-7.6-6.6 7.6H.5l8.6-9.8L.2 1.2h7.6L13 8.1z" />
+                </svg>
+              </a>
+              <Link href="/market" className={buttonClasses({ variant: "primary", size: "sm" })}>
+                Open app
+                <ArrowRight className="size-4" strokeWidth={2} />
+              </Link>
+            </>
           ) : (
             <WalletButton />
           )}
         </div>
 
+        {variant === "landing" && (
+          <a
+            href="https://x.com/farmentafun"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Farmenta on X"
+            title="Farmenta on X"
+            className="focus-ring ml-auto rounded-md p-2 text-steel-300 transition-colors hover:text-foreground md:hidden"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 fill-current">
+              <path d="M18.9 1.2h3.7l-8.1 9.2 9.5 12.5h-7.4l-5.8-7.6-6.6 7.6H.5l8.6-9.8L.2 1.2h7.6L13 8.1z" />
+            </svg>
+          </a>
+        )}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-controls="mobile-navigation"
           aria-label={open ? "Close menu" : "Open menu"}
-          className="focus-ring ml-auto rounded-lg p-2 text-steel-300 transition-colors hover:bg-white/[0.05] hover:text-foreground md:hidden"
+          className={cn(
+            "focus-ring rounded-lg p-2 text-steel-300 transition-colors hover:bg-white/[0.05] hover:text-foreground md:hidden",
+            variant === "app" && "ml-auto",
+          )}
         >
           {open ? <X className="size-5" /> : <Menu className="size-5" />}
         </button>
