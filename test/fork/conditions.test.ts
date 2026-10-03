@@ -5,7 +5,10 @@ import { afterEach, describe, expect, inject, it, vi } from "vitest";
 
 import {
   borrow,
+  collectFees,
+  decreaseLiquidity,
   depositCollateral,
+  increaseLiquidity,
   repay,
   supply,
   withdraw,
@@ -14,6 +17,8 @@ import {
 import { ActionError } from "@/lib/onchain/errors";
 import {
   borrowGate,
+  collectFeesGate,
+  decreaseLiquidityGate,
   depositCollateralGate,
   repayGate,
   sessionGate,
@@ -22,6 +27,9 @@ import {
   withdrawGate,
 } from "@/lib/onchain/gates";
 import { readLenderState, readPosition, type Clients } from "@/lib/onchain/reads";
+import { readAddition } from "@/lib/onchain/addition";
+import { additionFor } from "@/lib/onchain/liquidity-math";
+import { DEFAULT_TOLERANCE_BPS, liquidityFor, minimumsFor, readRemoval } from "@/lib/onchain/removal";
 
 import { ETH_USDG, POSITIONS, userKey } from "./support/constants";
 import {
@@ -75,6 +83,20 @@ async function marketInUse() {
   return { lender, borrower };
 }
 
+/** A quarter of a position's liquidity, with the minimums of its quote: what the panel would send. */
+async function aQuarterOf(tokenId: bigint, account: `0x${string}`) {
+  const liquidity = liquidityFor((await position(tokenId, account)).holdings!.liquidity, 25);
+  const { quote } = await readRemoval(publicClient, market, tokenId, account, liquidity);
+  return { liquidity, ...minimumsFor(quote, DEFAULT_TOLERANCE_BPS) };
+}
+
+/** A quarter more liquidity for a position, with the maximums of its quote: what the panel would send. */
+async function aQuarterMoreOn(tokenId: bigint, account: `0x${string}`) {
+  const quote = await readAddition(publicClient, market, tokenId, account, { share: 25 });
+  const { max0, max1 } = additionFor(quote.price, quote.range, quote.liquidity, DEFAULT_TOLERANCE_BPS);
+  return { liquidity: quote.liquidity, max0, max1 };
+}
+
 const lenderState = (account: `0x${string}`) => readLenderState(publicClient, market, account);
 const position = (tokenId: bigint, account: `0x${string}`) => readPosition(publicClient, blueChip, tokenId, account);
 
@@ -82,14 +104,20 @@ describe("a paused market", () => {
   isolateEachTest();
 
   describe("negative", () => {
-    it("stops supplying, depositing collateral and borrowing, each with the reason", async () => {
+    it("stops supplying, depositing collateral, borrowing, collecting fees and removing liquidity, each with the reason", async () => {
       const { lender, borrower } = await marketInUse();
+      const quarter = await aQuarterOf(DEBT_FREE, borrower.address);
       await pause(market);
 
       const gates = [
         supplyGate(await lenderState(lender.address), 100n * USDG),
         depositCollateralGate(await position(IN_WALLET, borrower.address)),
         borrowGate(await position(INDEBTED, borrower.address), 10n * USDG),
+        // With a loan and without: the pause stops it either way.
+        collectFeesGate(await position(INDEBTED, borrower.address)),
+        collectFeesGate(await position(DEBT_FREE, borrower.address)),
+        decreaseLiquidityGate(await position(INDEBTED, borrower.address), DEFAULT_TOLERANCE_BPS),
+        decreaseLiquidityGate(await position(DEBT_FREE, borrower.address), DEFAULT_TOLERANCE_BPS),
       ];
       for (const gate of gates) {
         expect(gate).toMatchObject({ ok: false, code: "EnforcedPause" });
@@ -101,6 +129,11 @@ describe("a paused market", () => {
       expect((await refusal(supply(lender.clients, blueChip, 100n * USDG))).code).toBe("EnforcedPause");
       expect((await refusal(depositCollateral(borrower.clients, blueChip, IN_WALLET))).code).toBe("EnforcedPause");
       expect((await refusal(borrow(borrower.clients, blueChip, INDEBTED, 10n * USDG))).code).toBe("EnforcedPause");
+      expect((await refusal(collectFees(borrower.clients, blueChip, INDEBTED))).code).toBe("EnforcedPause");
+      expect((await refusal(collectFees(borrower.clients, blueChip, DEBT_FREE))).code).toBe("EnforcedPause");
+      expect((await refusal(decreaseLiquidity(borrower.clients, blueChip, DEBT_FREE, quarter))).code).toBe("EnforcedPause");
+      // Nothing is quoted either: the reason comes back in the quote's place.
+      expect((await refusal(readRemoval(publicClient, market, DEBT_FREE, borrower.address, quarter.liquidity))).code).toBe("EnforcedPause");
       expect(await nonceOf(lender.address), "the lender sent a transaction").toBe(lenderNonce);
       expect(await nonceOf(borrower.address), "the borrower sent a transaction").toBe(borrowerNonce);
       expect(await ownerOf(IN_WALLET)).toBe(borrower.address);
@@ -184,14 +217,33 @@ describe("a frozen pool", () => {
   });
 
   describe("positive", () => {
-    it("still repays and withdraws collateral", async () => {
+    it("still removes liquidity", async () => {
       const { borrower } = await marketInUse();
       await freeze(ETH_USDG.id);
-      await dealUsdg(borrower.address, 200n * USDG);
+
+      for (const tokenId of [INDEBTED, DEBT_FREE]) {
+        const state = await position(tokenId, borrower.address);
+        expect(decreaseLiquidityGate(state, DEFAULT_TOLERANCE_BPS)).toEqual({ ok: true });
+        await decreaseLiquidity(borrower.clients, blueChip, tokenId, await aQuarterOf(tokenId, borrower.address));
+        const left = (await position(tokenId, borrower.address)).holdings!.liquidity;
+        expect(left).toBe(state.holdings!.liquidity - liquidityFor(state.holdings!.liquidity, 25));
+      }
+    });
+
+    it("still collects fees, repays and withdraws collateral", async () => {
+      const { borrower } = await marketInUse();
+      await freeze(ETH_USDG.id);
 
       const frozen = await position(INDEBTED, borrower.address);
       expect(frozen.pool.status).toBe("frozen");
+      expect(collectFeesGate(frozen)).toEqual({ ok: true });
       expect(repayGate(frozen, "max")).toEqual({ ok: true });
+
+      // The loan's 100 USDG is in the wallet; what arrives on top of it is the fees.
+      await collectFees(borrower.clients, blueChip, INDEBTED);
+      expect(await usdgBalance(borrower.address)).toBeGreaterThan(100n * USDG);
+      expect((await position(INDEBTED, borrower.address)).holdings!.feesUsd).toBe(0n);
+      await dealUsdg(borrower.address, 200n * USDG);
 
       await repay(borrower.clients, blueChip, INDEBTED, "max");
       await withdrawCollateral(borrower.clients, blueChip, INDEBTED);
@@ -243,10 +295,12 @@ describe("a wallet on another network", () => {
   }
 
   describe("negative", () => {
-    it("cannot send any of the six transactions", async () => {
+    it("cannot send any of the nine transactions", async () => {
       const { lender, borrower } = await marketInUse();
       await dealUsdg(borrower.address, 500n * USDG);
       const astray = { lender: walletOn(mainnet.id, "lender"), borrower: walletOn(mainnet.id, "borrower") };
+      const quarter = await aQuarterOf(DEBT_FREE, borrower.address);
+      const more = await aQuarterMoreOn(DEBT_FREE, borrower.address);
       const lenderNonce = await nonceOf(lender.address);
       const borrowerNonce = await nonceOf(borrower.address);
 
@@ -259,6 +313,9 @@ describe("a wallet on another network", () => {
         () => borrow(astray.borrower, blueChip, INDEBTED, 10n * USDG),
         () => repay(astray.borrower, blueChip, INDEBTED, "max"),
         () => withdrawCollateral(astray.borrower, blueChip, DEBT_FREE),
+        () => collectFees(astray.borrower, blueChip, INDEBTED),
+        () => decreaseLiquidity(astray.borrower, blueChip, DEBT_FREE, quarter),
+        () => increaseLiquidity(astray.borrower, blueChip, DEBT_FREE, more),
       ];
       for (const attempt of attempts) expect((await refusal(attempt())).code).toBe("WrongNetwork");
 
@@ -317,7 +374,7 @@ describe("with the backend down", () => {
   }
 
   describe("positive", () => {
-    it("all six actions go through, over the RPC alone", async () => {
+    it("all nine actions go through, over the RPC alone", async () => {
       const lender = await newUser("lender");
       await dealUsdg(lender.address, 5_000n * USDG);
       const borrower = await newUser("borrower");
@@ -327,6 +384,11 @@ describe("with the backend down", () => {
       await supply(lender.clients, blueChip, 5_000n * USDG);
       await depositCollateral(borrower.clients, blueChip, INDEBTED);
       await borrow(borrower.clients, blueChip, INDEBTED, 100n * USDG);
+      await collectFees(borrower.clients, blueChip, INDEBTED);
+      // The quotes are read through the same RPC.
+      await dealUsdg(borrower.address, 2_000n * USDG);
+      await increaseLiquidity(borrower.clients, blueChip, INDEBTED, await aQuarterMoreOn(INDEBTED, borrower.address));
+      await decreaseLiquidity(borrower.clients, blueChip, INDEBTED, await aQuarterOf(INDEBTED, borrower.address));
       await dealUsdg(borrower.address, 200n * USDG);
       await repay(borrower.clients, blueChip, INDEBTED, "max");
       await withdrawCollateral(borrower.clients, blueChip, INDEBTED);

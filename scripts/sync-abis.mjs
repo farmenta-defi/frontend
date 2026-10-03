@@ -42,8 +42,11 @@ const TARGETS = {
       // borrower
       "accrue",
       "borrow",
+      "collectFees",
       "debtOf",
+      "decreaseLiquidity",
       "depositCollateralWithPermit",
+      "increaseLiquidity",
       "loanOf",
       "repay",
       "withdrawCollateral",
@@ -60,7 +63,18 @@ const TARGETS = {
   },
   PositionValuer: {
     artifacts: ["PositionValuer.sol/PositionValuer.json"],
-    functions: ["value"],
+    // `stateView`: where the valuer reads a pool's price, and so where the app reads it.
+    functions: ["stateView", "value"],
+  },
+  StateView: {
+    artifacts: ["IStateView.sol/IStateView.json"],
+    // The pool's price and tick: what an addition of liquidity costs is computed from them.
+    functions: ["getSlot0"],
+  },
+  Permit2: {
+    artifacts: ["ISignatureTransfer.sol/ISignatureTransfer.json"],
+    // Which nonces a wallet has spent. The transfer itself is the market's call, not the app's.
+    functions: ["nonceBitmap"],
   },
   PriceOracle: {
     artifacts: ["PriceOracle.sol/PriceOracle.json"],
@@ -82,8 +96,18 @@ const TARGETS = {
       "IERC721.sol/IERC721.json",
       "IERC721Permit_v4.sol/IERC721Permit_v4.json",
       "IUnorderedNonce.sol/IUnorderedNonce.json",
+      "Permit2Forwarder.sol/Permit2Forwarder.json",
     ],
-    functions: ["DOMAIN_SEPARATOR", "getApproved", "getPoolAndPositionInfo", "getPositionLiquidity", "nonces", "ownerOf"],
+    functions: [
+      "DOMAIN_SEPARATOR",
+      "getApproved",
+      "getPoolAndPositionInfo",
+      "getPositionLiquidity",
+      "nonces",
+      "ownerOf",
+      // The Permit2 the market pulls an addition's tokens through.
+      "permit2",
+    ],
     // Which positions a wallet received: `to` is indexed.
     events: ["Transfer"],
   },
@@ -104,8 +128,11 @@ const ERROR_ARTIFACTS = [
   "PositionValuer.sol/PositionValuer.json",
   "TwapRecorder.sol/TwapRecorder.json",
   "IPositionManager.sol/IPositionManager.json",
+  // PositionManager's check of the minimums a removal of liquidity is sent with.
+  "SlippageCheck.sol/SlippageCheck.json",
   "IERC721Permit_v4.sol/IERC721Permit_v4.json",
   "IUnorderedNonce.sol/IUnorderedNonce.json",
+  "ISignatureTransfer.sol/ISignatureTransfer.json",
 ];
 
 function run(cmd, args, cwd) {

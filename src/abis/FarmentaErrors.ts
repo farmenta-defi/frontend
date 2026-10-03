@@ -370,6 +370,17 @@ export const farmentaErrorsAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidAmount",
+    "inputs": [
+      {
+        "name": "maxAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidBorrowRecipient",
     "inputs": [
       {
@@ -410,6 +421,11 @@ export const farmentaErrorsAbi = [
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "LengthMismatch",
+    "inputs": []
   },
   {
     "type": "error",
@@ -461,6 +477,22 @@ export const farmentaErrorsAbi = [
   },
   {
     "type": "error",
+    "name": "MaximumAmountExceeded",
+    "inputs": [
+      {
+        "name": "maximumAmount",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "amountRequested",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "MemeCurrencyNotInPool",
     "inputs": [
       {
@@ -494,6 +526,22 @@ export const farmentaErrorsAbi = [
         "name": "poolId",
         "type": "bytes32",
         "internalType": "PoolId"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MinimumAmountInsufficient",
+    "inputs": [
+      {
+        "name": "minimumAmount",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "amountReceived",
+        "type": "uint128",
+        "internalType": "uint128"
       }
     ]
   },

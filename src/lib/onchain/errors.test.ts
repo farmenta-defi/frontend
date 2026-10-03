@@ -15,7 +15,15 @@ import { describe, expect, it } from "vitest";
 import { farmentaErrorsAbi } from "@/abis/FarmentaErrors";
 
 import { marketAbi } from "./contracts";
-import { ActionError, explainError, explainForPool, explainRevertData, toActionError } from "./errors";
+import {
+  ActionError,
+  explainAdditionError,
+  explainError,
+  explainForPool,
+  explainRemovalError,
+  explainRevertData,
+  toActionError,
+} from "./errors";
 
 const POOL = "0x54f7883914619af9105355bf83ed678bcf9f63560218ac61c9963b9503d0ba32";
 
@@ -32,7 +40,7 @@ describe("explainError", () => {
   describe("positive", () => {
     it("names every error FAR-72 lists and says what to do about it", () => {
       const cases: [string, readonly unknown[], RegExp][] = [
-        ["EnforcedPause", [], /paused/],
+        ["EnforcedPause", [], /paused.*collecting fees, and adding and removing liquidity are stopped/],
         ["PoolFrozenForNewPositions", [POOL], /frozen.*no new collateral/],
         ["PoolNotOpenForBorrowing", [POOL], /frozen.*no new loans/],
         ["BorrowExceedsMaxLtv", [700n * 10n ** 18n, 650n * 10n ** 18n], /\$700.*\$650/],
@@ -41,6 +49,7 @@ describe("explainError", () => {
         ["UsdgPriceOutOfBounds", [960_000_000_000_000_000n], /\$0\.96/],
         ["StalePrice", [zeroAddress, 1_700_000_000n], /price feed/],
         ["OutstandingDebt", [123n, 5n], /Repay the loan in full/],
+        ["PositionWouldBeUnhealthy", [123n, 990_000_000_000_000_000n], /health factor would be below 1.*Repay part of the loan, then collect/],
         ["PermitRejected", [123n], /signature/i],
         ["PositionBelowMinimum", [4n * 10n ** 18n, 5n * 10n ** 18n], /\$4.*\$5/],
         ["ERC4626ExceededMaxWithdraw", [zeroAddress, 200_000_000n, 150_000_000n], /up to 150 USDG.*200 USDG/],
@@ -160,6 +169,7 @@ describe("explainForPool", () => {
       expect(explained.message).toMatch(/NVDA/);
       expect(explained.message).toMatch(/stock market is closed/);
       expect(explained.message).toMatch(/open again when the stock market does/);
+      expect(explained.message).toMatch(/collecting the fees of a position with a loan/);
       expect(explained.message).toMatch(/Repaying works at any time/);
     });
 
@@ -194,6 +204,116 @@ describe("explainForPool", () => {
     it("leaves the error alone where the pool is not known", () => {
       expect(explainForPool(stale, null)).toEqual(stale);
       expect(explainForPool(stale, undefined)).toEqual(stale);
+    });
+  });
+});
+
+describe("the errors of a removal of liquidity", () => {
+  const WAD = 10n ** 18n;
+
+  describe("positive", () => {
+    it("says what to do about a loan that would not fit what is left", () => {
+      const explained = explainRemovalError(revertWith("RemovalExceedsBorrowLimit", [123n, 300n * WAD, 250n * WAD]));
+
+      expect(explained.code).toBe("RemovalExceedsBorrowLimit");
+      expect(explained.message).toMatch(/loan of \$250.*this one is \$300/);
+      expect(explained.message).toMatch(/Remove less, or repay until the loan fits/);
+    });
+
+    it("points at a repayment and a withdrawal of the collateral where too little would be left", () => {
+      const explained = explainRemovalError(revertWith("PositionBelowMinimum", [4n * WAD, 5n * WAD]));
+
+      expect(explained.code).toBe("PositionBelowMinimum");
+      expect(explained.message).toMatch(/left is worth \$4.*\$5 minimum/);
+      expect(explained.message).toMatch(/Remove less.*repay the loan and withdraw the collateral/);
+    });
+
+    it("asks for a new quote when the price moved past the minimums, and names no tolerance", () => {
+      const explained = explainRemovalError(revertWith("MinimumAmountInsufficient", [100n, 99n]));
+
+      expect(explained.code).toBe("MinimumAmountInsufficient");
+      expect(explained.message).toMatch(/price moved.*Get a new quote/);
+      expect(explained.message).not.toMatch(/tolerance/i);
+    });
+  });
+
+  describe("negative", () => {
+    it("names the rest of what the market refuses a removal with", () => {
+      const cases: [string, readonly unknown[], RegExp][] = [
+        ["LiquidityExceedsPosition", [123n, 2n, 1n], /holds less liquidity/],
+        ["ZeroLiquidity", [], /how much of the liquidity/],
+        ["NotTheDepositor", [123n, zeroAddress], /remove its liquidity/],
+        ["InvalidRecipient", [zeroAddress], /receive the liquidity/],
+        ["EnforcedPause", [], /adding and removing liquidity are stopped/],
+      ];
+      for (const [name, args, expected] of cases) {
+        const explained = explainRemovalError(revertWith(name, args));
+        expect(explained.code, name).toBe(name);
+        expect(explained.message, name).toMatch(expected);
+      }
+    });
+  });
+
+  describe("edge case", () => {
+    it("leaves the same error in a deposit's words everywhere else", () => {
+      const depositing = explainError(revertWith("PositionBelowMinimum", [4n * WAD, 5n * WAD]));
+
+      expect(depositing.message).toMatch(/minimum for collateral/);
+      expect(depositing.message).not.toMatch(/Remove less/);
+    });
+
+    it("keeps an error that is already explained as it is", () => {
+      const refused = new ActionError({ code: "QuoteUnavailable", message: "no quote" });
+      expect(explainRemovalError(refused)).toEqual({ code: "QuoteUnavailable", message: "no quote" });
+    });
+  });
+});
+
+describe("the errors of an addition of liquidity", () => {
+  describe("positive", () => {
+    it("asks for a new quote when the price moved past the maximums, and names no tolerance", () => {
+      const explained = explainAdditionError(revertWith("MaximumAmountExceeded", [100n, 101n]));
+
+      expect(explained.code).toBe("MaximumAmountExceeded");
+      expect(explained.message).toMatch(/price moved.*cost more than the maximum.*Get a new quote/);
+      expect(explained.message).not.toMatch(/tolerance/i);
+    });
+
+    it("says to add more where the fees paid out leave a loan under water", () => {
+      const explained = explainAdditionError(revertWith("PositionWouldBeUnhealthy", [123n, 990_000_000_000_000_000n]));
+
+      expect(explained.code).toBe("PositionWouldBeUnhealthy");
+      expect(explained.message).toMatch(/fees are paid out before the liquidity goes in.*Add more, or repay/);
+    });
+  });
+
+  describe("negative", () => {
+    it("names what the market refuses an addition with", () => {
+      const cases: [string, readonly unknown[], RegExp][] = [
+        ["PoolFrozenForNewPositions", [POOL], /no added liquidity/],
+        ["PoolNotListed", [POOL], /no liquidity can be added/],
+        ["NotTheDepositor", [123n, zeroAddress], /add liquidity to it/],
+        ["EnforcedPause", [], /adding liquidity is stopped/],
+        ["NativeValueMismatch", [1n, 0n], /ETH sent does not match/],
+        ["PermitDoesNotMatchPool", [], /permit does not list this pool's tokens/],
+      ];
+      for (const [name, args, expected] of cases) {
+        const explained = explainAdditionError(revertWith(name, args));
+        expect(explained.code, name).toBe(name);
+        expect(explained.message, name).toMatch(expected);
+      }
+    });
+  });
+
+  describe("edge case", () => {
+    it("leaves the same error in the words of collecting fees everywhere else", () => {
+      const collecting = explainError(revertWith("PositionWouldBeUnhealthy", [123n, 990_000_000_000_000_000n]));
+      expect(collecting.message).toMatch(/then collect the fees/);
+    });
+
+    it("keeps an error that is already explained as it is", () => {
+      const refused = new ActionError({ code: "InsufficientBalance", message: "short" });
+      expect(explainAdditionError(refused)).toEqual({ code: "InsufficientBalance", message: "short" });
     });
   });
 });

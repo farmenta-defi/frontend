@@ -262,8 +262,13 @@ export type LoanRisk = {
  * `MarketLens.positionValue` answers zero for a position the market does not hold.
  */
 export type PositionHoldings = {
+  /** The position's liquidity, in Uniswap's own unit: what a removal takes a share of. */
+  liquidity: bigint;
   amount0: bigint;
   amount1: bigint;
+  /** Uncollected fees in each of the pool's tokens: what `collectFees` pays out. */
+  fees0: bigint;
+  fees1: bigint;
   /** USD 1e18. */
   principalUsd: bigint;
   /** USD 1e18, uncollected fees, uncapped. */
@@ -365,7 +370,9 @@ export async function readPosition(
   ]);
   // Shown without a value rather than not shown, and with the reason.
   const holdings = valued.values
-    ? (({ amount0, amount1, principalUsd, feesUsd }) => ({ amount0, amount1, principalUsd, feesUsd }))(valued.values[0])
+    ? (({ liquidity, amount0, amount1, fees0, fees1, principalUsd, feesUsd }) => ({ liquidity, amount0, amount1, fees0, fees1, principalUsd, feesUsd }))(
+        valued.values[0],
+      )
     : null;
   const base = {
     ...none,

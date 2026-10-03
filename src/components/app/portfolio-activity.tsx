@@ -10,6 +10,7 @@ import { SelectMenu } from "@/components/ui/select-menu";
 import {
   ACTIVITY_FILTERS,
   activityLabel,
+  foldFees,
   matchesFilter,
   type ActivityFilter,
   type ActivityRow,
@@ -62,6 +63,9 @@ function Row({ row }: { row: ActivityRow }) {
           <span className="mt-0.5 block whitespace-nowrap text-[12px] text-steel-500">
             Position <span className="font-mono">#{row.tokenId}</span>
           </span>
+        )}
+        {row.withFees && (
+          <span className="mt-0.5 block whitespace-nowrap text-[12px] text-steel-500">Fees collected with it</span>
         )}
       </td>
       <td className="px-3 py-3.5">
@@ -126,7 +130,8 @@ export function WalletActivity({ account, empty }: { account: Address; empty: Re
 
   if (history.rows.length === 0 && !history.hasMore) return <>{empty}</>;
 
-  const visible = history.rows.filter((row) => matchesFilter(row, filter));
+  // A change of liquidity and the fees paid out with it are one transaction, and one row.
+  const visible = foldFees(history.rows).filter((row) => matchesFilter(row, filter));
 
   return (
     <div>

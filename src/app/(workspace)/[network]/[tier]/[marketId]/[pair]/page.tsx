@@ -128,7 +128,12 @@ export default async function MarketDetailPage({ params }: { params: Promise<Rou
           </div>
         </div>
 
-        <aside aria-label="Supply or borrow" className="lg:sticky lg:top-24 lg:self-start">
+        <aside
+          aria-label="Supply or borrow"
+          // Kept in view beside the page. Where it is taller than the window it scrolls by itself:
+          // held in place and cut off, its last buttons would only show at the end of the page.
+          className="lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto"
+        >
           <MarketActionPanel pool={pool} />
         </aside>
       </div>

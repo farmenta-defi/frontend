@@ -2,17 +2,19 @@
 
 import { useState } from "react";
 
-import { ActionButton, ActionNote, AmountField } from "@/components/app/action-controls";
+import { ActionButton, ActionNote, AmountField, FEES_ARE_COLLATERAL } from "@/components/app/action-controls";
 import { PositionPicker, usePoolPositions } from "@/components/app/position-picker";
 import { AssetMark, AssetPair } from "@/components/ui/asset-mark";
 import { HealthBar, hfLabel, hfTone } from "@/components/ui/health-bar";
 import { Segmented } from "@/components/ui/segmented";
 import { useMarket, usePoolFigures } from "@/lib/backend/hooks";
-import { fmtPct, fmtUsd, fmtUsdg, orDash } from "@/lib/format";
+import { fmtPct, fmtUsd, fmtUsdExact, fmtUsdg, orDash } from "@/lib/format";
 import { closureOf, MARKETS, NETWORKS, type CollateralPool } from "@/lib/markets";
-import { borrow, depositCollateral, repay, supply, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
+import { borrow, collectFees, depositCollateral, repay, supply, withdraw, withdrawCollateral } from "@/lib/onchain/actions";
+import { describePosition, feesInWords } from "@/lib/onchain/describe";
 import {
   borrowGate,
+  collectFeesGate,
   depositCollateralGate,
   entryGate,
   repayGate,
@@ -43,8 +45,8 @@ import { cn } from "@/lib/utils";
  * it cannot be read; the actions do not wait for them.
  *
  * In a market the app holds closed (`closureOf`), what brings funds in is refused, and the
- * button says so: supplying, depositing a position, borrowing. Withdrawing, repaying and
- * taking collateral back are decided as in any other market.
+ * button says so: supplying, depositing a position, borrowing. Withdrawing, repaying, taking
+ * collateral back and collecting a position's fees are decided as in any other market.
  */
 type Tab = "borrow" | "supply";
 
@@ -184,6 +186,10 @@ function SupplySide({ pool }: { pool: CollateralPool }) {
 function BorrowSide({ pool }: { pool: CollateralPool }) {
   const session = useSession();
   const action = useAction(pool.tier);
+  // The fees are collected from the position's own card, at the top of the rail, and say how it
+  // went there. One transaction at a time all the same: each waits for the other.
+  const feesAction = useAction(pool.tier);
+  const busy = action.busy || feesAction.busy;
   const figures = usePoolFigures(pool.poolId).data;
   const list = usePoolPositions(pool);
   const { positions } = list;
@@ -212,6 +218,11 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
         ? entryGate(closure, borrowGate(position, amount))
         : repayGate(position, amount);
   const exit = position && held ? withdrawCollateralGate(position) : LOADING;
+  const collect = position && held ? collectFeesGate(position) : LOADING;
+  const { feesUsd, fees } = position && held ? describePosition(position) : { feesUsd: null, fees: null };
+  const feesNamed = feesInWords(fees, pool.base.symbol);
+  // Left out while there is nothing to collect.
+  const collectable = held && (collect.ok || collect.code !== "NoFees");
 
   const limit = !position || !held ? undefined : borrowing ? position.risk?.maxBorrow : position.debt;
   const over = !gate.ok && ["BorrowExceedsMaxLtv", "InsufficientBalance"].includes(gate.code);
@@ -229,6 +240,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
     action.reset();
   };
   const pick = (next: bigint) => {
+    feesAction.reset();
     setPicked(next);
     setMode("borrow");
     change("");
@@ -268,6 +280,15 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
     );
   };
 
+  const collectTheFees = async () => {
+    if (tokenId === null) return;
+    await feesAction.run(
+      "The fees are in your wallet.",
+      (clients, refs, onStep) => collectFees(clients, refs, tokenId, onStep),
+      pool.poolId,
+    );
+  };
+
   return (
     <>
       <Card>
@@ -275,6 +296,41 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
           <AssetPair pair={pool.pair} size={20} />
         </CardHead>
         <PositionPicker pool={pool} list={list} selected={tokenId} onSelect={pick} />
+        {/* The selected position's fees, where the position is: nothing to scroll to. Left out
+            while there is nothing to collect and nothing to say about a collection. */}
+        {(collectable || feesAction.state.status !== "idle") && (
+          <div className="mt-3 border-t border-border/70 pt-3">
+            {collectable && (
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[12px] text-steel-400">Uncollected fees</p>
+                  {/* Text, so an amount of many digits wraps instead of running out of a button. */}
+                  <p className="tnum mt-0.5 text-[12.5px] font-medium text-foreground [overflow-wrap:anywhere]">
+                    {feesNamed ?? "—"}
+                  </p>
+                </div>
+                <ActionButton
+                  session={session}
+                  gate={collect}
+                  busy={busy}
+                  onClick={collectTheFees}
+                  size="sm"
+                  variant="secondary"
+                  label="Collect"
+                  className="shrink-0"
+                />
+              </div>
+            )}
+            {collectable && position.debt > 0n && (
+              <p className="mt-2 text-[11px] leading-[17px] text-warn">{FEES_ARE_COLLATERAL}</p>
+            )}
+            {feesAction.state.status !== "idle" && (
+              <div className={cn(collectable && "mt-2")}>
+                <ActionNote session={session} gate={{ ok: true }} state={feesAction.state} pool={pool} />
+              </div>
+            )}
+          </div>
+        )}
       </Card>
 
       {held && (
@@ -300,7 +356,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
             onChange={change}
             limitLabel={usdg(limit)}
             onMax={() => change(limit === undefined ? "" : formatUsdg(limit))}
-            disabled={action.busy || limit === undefined || limit === 0n || (borrowing && closure !== null)}
+            disabled={busy || limit === undefined || limit === 0n || (borrowing && closure !== null)}
             invalid={over}
           />
         </Card>
@@ -310,6 +366,8 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
         <Network pool={pool} />
         <Row label="Loan (USDG)">{preview ? fmtUsdg(preview.debt) : held ? fmtUsdg(usdgToNumber(position.debt)) : "—"}</Row>
         <Row label={`Collateral (${pool.pair})`}>{preview ? fmtUsd(preview.collateralUsd) : "—"}</Row>
+        {/* In full. "Collateral" counts them up to a tenth of the principal. */}
+        {held && <Row label="Uncollected fees">{orDash(feesUsd, fmtUsdExact)}</Row>}
         <Row label="LTV">{preview ? `${(preview.ltv * 100).toFixed(2)}%` : "—"}</Row>
         <Row label="Liquidation LTV">{orDash(liquidationLtvPct, (value) => `${value.toFixed(0)}%`)}</Row>
         <Row label="Health factor">
@@ -336,7 +394,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
       <ActionButton
         session={session}
         gate={gate}
-        busy={action.busy}
+        busy={busy}
         onClick={submit}
         label={
           !held
@@ -349,7 +407,7 @@ function BorrowSide({ pool }: { pool: CollateralPool }) {
         <ActionButton
           session={session}
           gate={exit}
-          busy={action.busy}
+          busy={busy}
           onClick={takeBack}
           variant="secondary"
           label="Withdraw collateral to your wallet"

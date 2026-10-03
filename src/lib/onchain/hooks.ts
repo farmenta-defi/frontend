@@ -11,10 +11,12 @@ import { chainKeys, invalidateAfterTransaction } from "@/lib/query-keys";
 import type { MarketTier } from "@/lib/risk-params";
 
 import type { Progress, Step } from "./actions";
+import { readAddition } from "./addition";
 import { POSITION_MANAGER_START_BLOCK, walletPositionsQuery } from "./discovery";
 import { explainError, type Explained } from "./errors";
 import { sessionGate, type Gate } from "./gates";
 import { readLenderState, readPosition, type Clients, type MarketRefs, type ReadClient } from "./reads";
+import { readRemoval } from "./removal";
 
 /**
  * The React side of the on-chain actions: who is connected and whether they
@@ -104,6 +106,44 @@ export function usePosition(tier: MarketTier, tokenId: bigint | null) {
 export function usePositions(tier: MarketTier, tokenIds: readonly bigint[]) {
   const { account, publicClient } = useSession();
   return useQueries({ queries: tokenIds.map((tokenId) => positionQuery(tier, tokenId, account, publicClient)) });
+}
+
+/**
+ * What removing `liquidity` from a deposited position would pay, and whether the market would
+ * take the removal. Read again every 15 seconds while the panel is open, and at once when the
+ * amount changes: the minimums the transaction is sent with come from the quote on screen.
+ * `liquidity` is `null` while there is nothing to quote.
+ */
+export function useRemoval(tier: MarketTier, tokenId: bigint, liquidity: bigint | null) {
+  const { account, publicClient } = useSession();
+  const refs = marketRefs(tier);
+
+  return useQuery({
+    queryKey: chainKeys.removal(tier, tokenId, account ?? "0x", liquidity ?? 0n),
+    queryFn: () => readRemoval(publicClient!, refs!.market, tokenId, account!, liquidity!),
+    enabled: Boolean(refs && account && publicClient && liquidity !== null && liquidity > 0n),
+    refetchInterval: REFRESH_MS,
+    // A refusal is an answer. Asking the same block again gives the same one.
+    retry: false,
+  });
+}
+
+/**
+ * What adding `share` percent to a deposited position's liquidity costs at the pool's price, and
+ * what the wallet holds to pay it with. Read again every 15 seconds while the panel is open: the
+ * maximums the wallet signs for come from the quote on screen. `share` is `null` while there is
+ * nothing to quote.
+ */
+export function useAddition(tier: MarketTier, tokenId: bigint, share: number | null) {
+  const { account, publicClient } = useSession();
+  const refs = marketRefs(tier);
+
+  return useQuery({
+    queryKey: chainKeys.addition(tier, tokenId, account ?? "0x", share ?? 0),
+    queryFn: () => readAddition(publicClient!, refs!.market, tokenId, account!, { share: share! }),
+    enabled: Boolean(refs && account && publicClient && share !== null),
+    refetchInterval: REFRESH_MS,
+  });
 }
 
 /* ------------------------------------------------------------------ */

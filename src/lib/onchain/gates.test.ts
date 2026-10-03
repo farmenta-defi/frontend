@@ -2,8 +2,13 @@ import { maxUint256, zeroAddress } from "viem";
 import { describe, expect, it } from "vitest";
 
 import {
+  additionFundsGate,
+  increaseLiquidityGate,
+  toleranceGate,
   entryGate,
   borrowGate,
+  collectFeesGate,
+  decreaseLiquidityGate,
   depositCollateralGate,
   repayGate,
   sessionGate,
@@ -177,7 +182,7 @@ describe("depositCollateralGate", () => {
     });
 
     it("takes a position that was valued, whatever an earlier reading failed with", () => {
-      const holdings = { amount0: 1n, amount1: 1n, principalUsd: 100n * 10n ** 18n, feesUsd: 0n };
+      const holdings = { liquidity: 1_000n, amount0: 1n, amount1: 1n, fees0: 0n, fees1: 0n, principalUsd: 100n * 10n ** 18n, feesUsd: 0n };
 
       expect(depositCollateralGate(inWallet({ holdings, holdingsError: null }), POOL)).toEqual({ ok: true });
     });
@@ -281,6 +286,228 @@ describe("repayGate and withdrawCollateralGate", () => {
 
     it("has nothing to repay on a loan without debt", () => {
       expect(code(repayGate(collateral({ debt: 0n }), "max"))).toBe("NoDebt");
+    });
+  });
+});
+
+describe("collectFeesGate", () => {
+  const WAD = 10n ** 18n;
+  /** Fees in each of the pool's two tokens. The USD figure follows them, as the valuer's does. */
+  const holdings = (fees0: bigint, fees1 = 0n) => ({
+    liquidity: 1_000n, amount0: 1n,
+    amount1: 1n,
+    fees0,
+    fees1,
+    principalUsd: 400n * WAD,
+    feesUsd: (fees0 + fees1) * WAD,
+  });
+  const earning = (over: Partial<PositionState> = {}) => collateral({ holdings: holdings(3n, 2n), ...over });
+
+  describe("positive", () => {
+    it("opens for collateral that has earned fees, with a loan and without", () => {
+      expect(collectFeesGate(earning())).toEqual({ ok: true });
+      expect(collectFeesGate(earning({ debt: 0n }))).toEqual({ ok: true });
+    });
+  });
+
+  describe("negative", () => {
+    it("refuses a position that is not the wallet's collateral", () => {
+      expect(code(collectFeesGate(inWallet({ holdings: holdings(3n, 2n) })))).toBe("NotTheDepositor");
+      expect(code(collectFeesGate(earning({ place: "elsewhere" })))).toBe("NotTheDepositor");
+    });
+
+    it("stops while the market is paused, with a loan and without", () => {
+      expect(code(collectFeesGate(earning({ paused: true })))).toBe("EnforcedPause");
+      const gate = collectFeesGate(earning({ paused: true, debt: 0n }));
+      expect(gate.ok === false && gate.message).toMatch(/paused.*collecting fees/);
+    });
+
+    it("has nothing to collect where no fees have been earned in either token", () => {
+      expect(code(collectFeesGate(earning({ holdings: holdings(0n, 0n) })))).toBe("NoFees");
+    });
+
+    it("refuses a loan that cannot be priced, with the oracle's reason", () => {
+      const unpriced = earning({ risk: null, riskError: { code: "StalePrice", message: "stale" } });
+      expect(collectFeesGate(unpriced)).toEqual({ ok: false, code: "StalePrice", message: "stale" });
+      expect(code(collectFeesGate(earning({ risk: null })))).toBe("PriceUnavailable");
+    });
+  });
+
+  describe("edge case", () => {
+    it("stays open while the pool is frozen", () => {
+      expect(collectFeesGate(earning({ pool: { status: "frozen", terms: null } }))).toEqual({ ok: true });
+    });
+
+    it("needs no price without a loan: the market checks nothing then", () => {
+      const unpriced = earning({ debt: 0n, risk: null, riskError: { code: "StalePrice", message: "stale" } });
+      expect(collectFeesGate(unpriced)).toEqual({ ok: true });
+    });
+
+    it("stays open without a loan where the fees could not be read, and leaves it to the contract", () => {
+      expect(collectFeesGate(collateral({ debt: 0n, holdings: null, risk: null }))).toEqual({ ok: true });
+    });
+
+    it("opens for the smallest unit of a fee, in one token alone", () => {
+      expect(collectFeesGate(earning({ holdings: holdings(1n, 0n) }))).toEqual({ ok: true });
+      expect(collectFeesGate(earning({ holdings: holdings(0n, 1n) }))).toEqual({ ok: true });
+    });
+
+    it("goes by the tokens and not by their value: fees worth less than the valuer can price are still collected", () => {
+      expect(collectFeesGate(earning({ holdings: { ...holdings(0n, 1n), feesUsd: 0n } }))).toEqual({ ok: true });
+    });
+  });
+});
+
+describe("decreaseLiquidityGate", () => {
+  const priced = (over: Partial<PositionState> = {}) =>
+    collateral({
+      holdings: { liquidity: 1_000n, amount0: 1n, amount1: 1n, fees0: 0n, fees1: 0n, principalUsd: 400n * 10n ** 18n, feesUsd: 0n },
+      ...over,
+    });
+
+  describe("positive", () => {
+    it("opens for priced collateral at the default tolerance, with a loan and without", () => {
+      expect(decreaseLiquidityGate(priced(), 50)).toEqual({ ok: true });
+      expect(decreaseLiquidityGate(priced({ debt: 0n }), 50)).toEqual({ ok: true });
+    });
+  });
+
+  describe("negative", () => {
+    it("refuses a position that is not the wallet's collateral", () => {
+      expect(code(decreaseLiquidityGate(inWallet(), 50))).toBe("NotTheDepositor");
+    });
+
+    it("stops while the market is paused", () => {
+      const gate = decreaseLiquidityGate(priced({ paused: true }), 50);
+      expect(code(gate)).toBe("EnforcedPause");
+      expect(gate.ok === false && gate.message).toMatch(/paused.*removing liquidity/);
+    });
+
+    it("refuses a tolerance above 5%, and one that is not a number", () => {
+      expect(code(decreaseLiquidityGate(priced(), 501))).toBe("ToleranceTooHigh");
+      expect(code(decreaseLiquidityGate(priced(), null))).toBe("NoTolerance");
+    });
+
+    it("needs a price even without a loan: the market values what is left against the pool's minimum", () => {
+      const stale = { code: "StalePrice", message: "stale" };
+      const unpriced = priced({ debt: 0n, holdings: null, holdingsError: stale, risk: null });
+      expect(decreaseLiquidityGate(unpriced, 50)).toEqual({ ok: false, ...stale });
+      expect(code(decreaseLiquidityGate(priced({ risk: null, riskError: stale }), 50))).toBe("StalePrice");
+    });
+  });
+
+  describe("edge case", () => {
+    it("stays open while the pool is frozen", () => {
+      expect(decreaseLiquidityGate(priced({ pool: { status: "frozen", terms: null } }), 50)).toEqual({ ok: true });
+    });
+
+    it("takes 5% exactly, 1%, and zero", () => {
+      for (const bps of [500, 100, 0]) expect(decreaseLiquidityGate(priced(), bps), String(bps)).toEqual({ ok: true });
+    });
+
+    it("says the market is paused before it says anything about the tolerance", () => {
+      expect(code(decreaseLiquidityGate(priced({ paused: true }), null))).toBe("EnforcedPause");
+    });
+  });
+});
+
+describe("increaseLiquidityGate", () => {
+  describe("positive", () => {
+    it("opens for collateral in an open pool, with a loan and without", () => {
+      expect(increaseLiquidityGate(collateral())).toEqual({ ok: true });
+      expect(increaseLiquidityGate(collateral({ debt: 0n }))).toEqual({ ok: true });
+    });
+  });
+
+  describe("negative", () => {
+    it("refuses a position that is not the wallet's collateral", () => {
+      expect(code(increaseLiquidityGate(inWallet()))).toBe("NotTheDepositor");
+    });
+
+    it("stops while the market is paused, and in a pool that takes no new capital", () => {
+      const paused = increaseLiquidityGate(collateral({ paused: true }));
+      expect(code(paused)).toBe("EnforcedPause");
+      expect(paused.ok === false && paused.message).toMatch(/paused.*adding liquidity/);
+
+      const frozen = increaseLiquidityGate(collateral({ pool: { status: "frozen", terms: null } }));
+      expect(code(frozen)).toBe("PoolFrozenForNewPositions");
+      expect(frozen.ok === false && frozen.message).toMatch(/no added liquidity/);
+      expect(code(increaseLiquidityGate(collateral({ pool: { status: "unlisted", terms: null } })))).toBe("PoolNotListed");
+    });
+
+    it("refuses a loan that cannot be priced, with the oracle's reason", () => {
+      const stale = { code: "StalePrice", message: "stale" };
+      expect(increaseLiquidityGate(collateral({ risk: null, riskError: stale }))).toEqual({ ok: false, ...stale });
+    });
+  });
+
+  describe("edge case", () => {
+    it("needs no price without a loan", () => {
+      const unpriced = collateral({ debt: 0n, holdings: null, risk: null, riskError: { code: "StalePrice", message: "stale" } });
+      expect(increaseLiquidityGate(unpriced)).toEqual({ ok: true });
+    });
+
+    it("is refused by a market the app holds closed, before any other reason", () => {
+      const closure = { label: "Temporarily closed" };
+      expect(code(entryGate(closure, increaseLiquidityGate(collateral())))).toBe("MarketClosed");
+      expect(code(entryGate(closure, increaseLiquidityGate(collateral({ paused: true }))))).toBe("MarketClosed");
+    });
+  });
+});
+
+describe("toleranceGate", () => {
+  describe("positive", () => {
+    it("takes the default, and anything up to 5%", () => {
+      for (const bps of [0, 50, 100, 500]) expect(toleranceGate(bps), String(bps)).toEqual({ ok: true });
+    });
+  });
+
+  describe("negative", () => {
+    it("refuses above 5%, and what is not a tolerance", () => {
+      expect(code(toleranceGate(501))).toBe("ToleranceTooHigh");
+      expect(code(toleranceGate(null))).toBe("NoTolerance");
+    });
+  });
+
+  describe("edge case", () => {
+    it("is the same rule a removal is held to", () => {
+      const priced = collateral({
+        holdings: { liquidity: 1n, amount0: 1n, amount1: 1n, fees0: 0n, fees1: 0n, principalUsd: 400n * 10n ** 18n, feesUsd: 0n },
+      });
+      for (const bps of [null, 0, 500, 501]) expect(decreaseLiquidityGate(priced, bps), String(bps)).toEqual(toleranceGate(bps));
+    });
+  });
+});
+
+describe("additionFundsGate", () => {
+  const symbols = ["ETH", "USDG"] as const;
+  const funds = { max0: 10n, max1: 20n, balance0: 10n, balance1: 20n };
+
+  describe("positive", () => {
+    it("opens for a wallet that holds each maximum, to the unit", () => {
+      expect(additionFundsGate(funds, symbols)).toEqual({ ok: true });
+    });
+  });
+
+  describe("negative", () => {
+    it("names the token the wallet is short of, or both", () => {
+      const eth = additionFundsGate({ ...funds, balance0: 9n }, symbols);
+      const both = additionFundsGate({ ...funds, balance0: 9n, balance1: 0n }, symbols);
+
+      expect(code(eth)).toBe("InsufficientBalance");
+      expect(eth.ok === false && eth.message).toMatch(/less ETH than/);
+      expect(both.ok === false && both.message).toMatch(/less ETH and less USDG than/);
+    });
+  });
+
+  describe("edge case", () => {
+    it("goes by the maximum, not the need: the market pulls the maximum and gives the change back", () => {
+      // The need would be 19; the maximum is 20, and the wallet holds 19.
+      expect(code(additionFundsGate({ ...funds, balance1: 19n }, symbols))).toBe("InsufficientBalance");
+    });
+
+    it("asks nothing of a token the addition takes none of", () => {
+      expect(additionFundsGate({ max0: 0n, max1: 20n, balance0: 0n, balance1: 20n }, symbols)).toEqual({ ok: true });
     });
   });
 });
